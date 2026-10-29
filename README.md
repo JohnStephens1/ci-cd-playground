@@ -36,7 +36,17 @@ uv run ruff format .
 uv run ruff check --fix .
 ```
 
-### 3. Build Distribution Packages
+### 3. Run the FastAPI Application
+
+Start the local development server with auto-reload:
+
+```bash
+uv run uvicorn ci_cd_playground:app --reload
+```
+
+The API endpoints will be accessible at `http://127.0.0.1:8000/` and interactive Swagger docs at `http://127.0.0.1:8000/docs`.
+
+### 4. Build Distribution Packages
 
 Build both the source distribution (`.tar.gz`) and wheel (`.whl`):
 
@@ -101,7 +111,7 @@ git push origin v0.1.0
 ## Project Structure
 
 ```text
-ci-test/
+ci-cd-playground/
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml          # Reusable CI workflow (lint, typecheck, test, build)
@@ -109,10 +119,12 @@ ci-test/
 ├── src/
 │   └── ci_cd_playground/
 │       ├── __init__.py     # Package entrypoint and sample code
+│       ├── app.py          # Minimal FastAPI application
 │       └── py.typed        # PEP 561 typing marker
 ├── tests/
 │   ├── __init__.py
-│   └── test_ci_cd_playground.py     # Pytest test cases
+│   ├── test_app.py         # FastAPI endpoint and factory tests
+│   └── test_ci_test.py     # Base unit tests
 ├── .gitignore
 ├── .python-version         # Default local Python version
 ├── pyproject.toml          # Project configuration, dependencies, and tool settings
