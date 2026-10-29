@@ -45,6 +45,7 @@ version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -54,11 +55,13 @@ dev = [
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
-    { name = "uvicorn" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "fastapi", specifier = ">=0.162.0" }]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.162.0" },
+    { name = "uvicorn", specifier = ">=0.54.0" },
+]
 
 [package.metadata.requires-dev]
 dev = [
@@ -66,7 +69,6 @@ dev = [
     { name = "pyright", specifier = ">=1.1.414" },
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "ruff", specifier = ">=0.17.3" },
-    { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 
 [[package]]
