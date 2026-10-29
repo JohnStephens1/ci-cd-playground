@@ -3,7 +3,7 @@ revision = 5
 requires-python = ">=3.10"
 
 [[package]]
-name = "ci-test"
+name = "ci-cd-playground"
 version = "0.1.1"
 source = { editable = "." }
 
