@@ -1,6 +1,6 @@
-"""Tests for the ci_test package."""
+"""Tests for the ci_cd_playground package."""
 
-from ci_test import add, hello
+from ci_cd_playground import add, hello
 
 
 def test_hello_default() -> None:

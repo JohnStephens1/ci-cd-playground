@@ -93,7 +93,7 @@ jobs:
         run: uv build
 
       - name: Verify wheel installation and import
-        run: uv run --isolated --no-project --with dist/*.whl python -c "import ci_test; print('ci_test imported successfully:', ci_test.hello())"
+        run: uv run --isolated --no-project --with dist/*.whl python -c "import ci_cd_playground; print('ci_cd_playground imported successfully:', ci_cd_playground.hello())"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7

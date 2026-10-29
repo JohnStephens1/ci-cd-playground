@@ -1,4 +1,4 @@
-"""ci_test package."""
+"""ci_cd_playground package."""
 
 __all__ = ["add", "hello"]
 

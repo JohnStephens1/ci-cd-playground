@@ -107,12 +107,12 @@ ci-test/
 │       ├── ci.yml          # Reusable CI workflow (lint, typecheck, test, build)
 │       └── release.yml     # Release workflow (calls ci.yml, publishes to TestPyPI & GitHub)
 ├── src/
-│   └── ci_test/
+│   └── ci_cd_playground/
 │       ├── __init__.py     # Package entrypoint and sample code
 │       └── py.typed        # PEP 561 typing marker
 ├── tests/
 │   ├── __init__.py
-│   └── test_ci_test.py     # Pytest test cases
+│   └── test_ci_cd_playground.py     # Pytest test cases
 ├── .gitignore
 ├── .python-version         # Default local Python version
 ├── pyproject.toml          # Project configuration, dependencies, and tool settings
