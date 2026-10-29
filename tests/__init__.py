@@ -1,1 +1,1 @@
-"""Test package for ci_test."""
+"""Test package for ci_cd_playground."""

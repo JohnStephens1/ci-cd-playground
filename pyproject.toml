@@ -1,5 +1,5 @@
 [project]
-name = "ci-test"
+name = "ci-cd-playground"
 version = "0.1.1"
 description = "A sample Python project with uv, ruff, pyright, and pytest"
 readme = "README.md"
