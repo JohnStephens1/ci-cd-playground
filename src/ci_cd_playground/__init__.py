@@ -1,6 +1,8 @@
 """ci_cd_playground package."""
 
-__all__ = ["add", "hello"]
+from ci_cd_playground.app import app, create_app
+
+__all__ = ["add", "app", "create_app", "hello"]
 
 
 def hello(name: str = "world") -> str:
