@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0). If omitted, the triggering ref is used."
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI Validation & Build
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Create GitHub Release
+    needs: [ci]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Resolve release tag
+        id: resolve-tag
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          # Compare tag with package version in pyproject.toml
+          PROJECT_VERSION="$(uv version --short)"
+          echo "Detected project version: $PROJECT_VERSION"
+          echo "Target release tag: $TAG"
+
+          if [ "$TAG" != "v$PROJECT_VERSION" ]; then
+            echo "::warning::Release tag '$TAG' does not match project version 'v$PROJECT_VERSION' in pyproject.toml"
+          fi
+
+      - name: Download built packages from CI
+        uses: actions/download-artifact@v7
+        with:
+          name: dist-packages
+          path: dist/
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.resolve-tag.outputs.tag }}"
+          gh release create "$TAG" \
+            dist/* \
+            --title "Release $TAG" \
+            --generate-notes
