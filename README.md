@@ -1,4 +1,4 @@
-# ci-test
+# ci-cd-playground
 
 A Python project configured with [`uv`](https://docs.astral.sh/uv/), [`ruff`](https://docs.astral.sh/ruff/), [`pyright`](https://microsoft.github.io/pyright/), and [`pytest`](https://docs.pytest.org/), complete with GitHub Actions Continuous Integration (CI), Release automation, and automated publishing to TestPyPI.
 
