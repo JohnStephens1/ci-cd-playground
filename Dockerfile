@@ -5,10 +5,19 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv
 
 COPY pyproject.toml uv.lock README.md ./
+
+RUN uv sync --frozen --no-dev --no-install-project
+
 COPY src/ ./src/
 
 RUN uv sync --frozen --no-dev
 
+# Create and use a non-root user
+RUN useradd --create-home appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "ci_cd_playground.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "--no-sync", "uvicorn", "ci_cd_playground.app:app", "--host", "0.0.0.0", "--port", "8000"]
