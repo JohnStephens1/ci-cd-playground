@@ -1,5 +1,4 @@
-FROM ghcr.io/astral-sh/uv:0.13.6
-ENTRYPOINT []
+FROM ghcr.io/astral-sh/uv:python3.13-dhi
 
 WORKDIR /app
 
