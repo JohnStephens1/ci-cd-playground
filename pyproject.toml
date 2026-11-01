@@ -1,6 +1,6 @@
 [project]
 name = "ci-cd-playground"
-version = "0.1.4"
+version = "0.1.5"
 description = "A sample Python project with uv, ruff, pyright, and pytest"
 readme = "README.md"
 authors = [
