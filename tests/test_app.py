@@ -27,6 +27,18 @@ def test_health_check(client: TestClient) -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_version(client: TestClient) -> None:
+    """Test the version endpoint contains correct keys and value type."""
+    response = client.get("/version")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "version" in data
+    assert "commit" in data
+    assert isinstance(data["version"], str)
+    assert isinstance(data["commit"], str)
+
+
 def test_greet(client: TestClient) -> None:
     """Test the greeting endpoint with a custom path parameter."""
     response = client.get("/hello/Antigravity")

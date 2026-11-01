@@ -42,6 +42,8 @@ jobs:
         run: |
           docker build \
             --platform linux/amd64 \
+            --build-arg APP_VERSION="${GITHUB_REF_NAME}" \
+            --build-arg GIT_SHA="${GITHUB_SHA}" \
             -t ci-cd-playground:${GITHUB_SHA} \
             .
 
@@ -179,6 +181,110 @@ jobs:
           done
 
           echo "Staging health check failed."
+          exit 1
+
+  deploy-production:
+    name: Deploy to production
+    needs: [docker-publish, deploy-staging]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    environment:
+      name: production
+      url: https://ci-cd-playground-production.onrender.com
+
+    steps:
+      - name: Trigger Render deployment
+        id: deploy
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_PRODUCTION_SERVICE_ID }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URL="${IMAGE_NAME,,}:${IMAGE_TAG}"
+
+          RESPONSE=$(curl --fail-with-body --silent --show-error \
+            --request POST \
+            --url "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+            --header "Authorization: Bearer ${RENDER_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data "$(jq -n --arg image "$IMAGE_URL" \
+              '{imageUrl: $image}')")
+
+          DEPLOY_ID=$(echo "$RESPONSE" | jq -r '.id')
+
+          if [ -z "$DEPLOY_ID" ] || [ "$DEPLOY_ID" = "null" ]; then
+            echo "Could not retrieve deployment ID."
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          echo "Deployment started: $DEPLOY_ID"
+          echo "deploy_id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Render deployment
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_PRODUCTION_SERVICE_ID }}
+          DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
+        run: |
+          for i in {1..60}; do
+            RESPONSE=$(curl --fail-with-body --silent --show-error \
+              --url "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys/${DEPLOY_ID}" \
+              --header "Authorization: Bearer ${RENDER_API_KEY}")
+
+            STATUS=$(echo "$RESPONSE" | jq -r '.status')
+
+            echo "Deployment status: $STATUS"
+
+            if [ "$STATUS" = "live" ]; then
+              echo "Deployment completed successfully."
+              exit 0
+            fi
+
+            case "$STATUS" in
+              build_failed|update_failed|pre_deploy_failed|canceled|deactivated)
+                echo "Deployment failed with status: $STATUS"
+                exit 1
+                ;;
+            esac
+
+            sleep 30
+          done
+
+          echo "Timed out waiting for Render deployment."
+          exit 1
+
+      - name: Verify production health
+        env:
+          PRODUCTION_URL: https://ci-cd-playground-production.onrender.com
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          for i in {1..30}; do
+            if ! curl --fail --silent --show-error \
+              "$PRODUCTION_URL/health"; then
+              echo "Waiting for production health..."
+              sleep 10
+              continue
+            fi
+
+            RESPONSE=$(curl --fail --silent \
+              "$PRODUCTION_URL/version")
+
+            ACTUAL_SHA=$(echo "$RESPONSE" | jq -r '.commit')
+
+            if [ "$ACTUAL_SHA" = "$EXPECTED_SHA" ]; then
+              echo "Production is running the expected version."
+              exit 0
+            fi
+
+            echo "Expected: $EXPECTED_SHA"
+            echo "Actual: $ACTUAL_SHA"
+            sleep 10
+          done
+
+          echo "Production verification failed."
           exit 1
 
   publish-testpypi:
