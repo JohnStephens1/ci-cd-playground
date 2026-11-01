@@ -165,7 +165,7 @@ jobs:
 
       - name: Verify staging health
         env:
-          STAGING_URL: https://YOUR-STAGING-SERVICE.onrender.com
+          STAGING_URL: https://ci-cd-playground-rxcn.onrender.com
         run: |
           for i in {1..30}; do
             if curl --fail --silent --show-error \
