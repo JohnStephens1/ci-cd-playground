@@ -1,4 +1,5 @@
 FROM ghcr.io/astral-sh/uv:0.13.6
+ENTRYPOINT []
 
 WORKDIR /app
 
