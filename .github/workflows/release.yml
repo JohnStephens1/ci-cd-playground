@@ -332,8 +332,9 @@ jobs:
 
       - name: Resolve release tag
         id: resolve-tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
           # Compare tag with package version in pyproject.toml
