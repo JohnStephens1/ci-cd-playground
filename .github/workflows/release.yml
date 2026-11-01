@@ -20,9 +20,13 @@ jobs:
     name: CI Validation & Build
     uses: ./.github/workflows/ci.yml
 
+  docker-security:
+    name: Docker Build & Security Scan
+    uses: ./.github/workflows/container-security.yml
+
   docker-publish:
     name: Build, test and publish Docker image
-    needs: [ci]
+    needs: [ci, docker-security]
     runs-on: ubuntu-latest
 
     permissions:
@@ -108,7 +112,7 @@ jobs:
 
   deploy-staging:
     name: Deploy to staging
-    needs: docker-publish
+    needs: [ci, docker-security]
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
@@ -299,7 +303,7 @@ jobs:
 
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: [ci]
+    needs: [ci, docker-security]
     runs-on: ubuntu-latest
     environment:
       name: testpypi
@@ -327,7 +331,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [ci]
+    needs: [ci, docker-security]
     runs-on: ubuntu-latest
     permissions:
       contents: write
