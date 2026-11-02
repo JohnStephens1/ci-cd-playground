@@ -1,20 +1,28 @@
-FROM ghcr.io/astral-sh/uv:python3.13-dhi
+FROM python:3.13-slim-trixie AS build
 
 WORKDIR /app
 
+COPY --from=ghcr.io/astral-sh/uv:0.13.6 /uv /uvx /bin/
+
+ENV PYTHONUNBUFFERED=1
+
 COPY pyproject.toml uv.lock README.md ./
 
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --locked --no-dev --no-install-project
 
 COPY src/ ./src/
 
-RUN uv sync --frozen --no-dev
+RUN uv sync --locked --no-dev --no-editable
 
-# Create and use a non-root user
-RUN useradd --create-home appuser \
-    && chown -R appuser:appuser /app
 
-USER appuser
+FROM python:3.13-slim-trixie AS runtime
+
+WORKDIR /app
+
+COPY --from=build /app/.venv /app/.venv
+
+ENV PYTHONUNBUFFERED=1
+ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 
@@ -24,4 +32,4 @@ ARG GIT_SHA=unknown
 ENV APP_VERSION=${APP_VERSION}
 ENV GIT_SHA=${GIT_SHA}
 
-CMD ["sh", "-c", "uv run --no-sync uvicorn ci_cd_playground.app:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn ci_cd_playground.app:app --host 0.0.0.0 --port ${PORT:-8000}"]

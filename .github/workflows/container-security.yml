@@ -21,6 +21,7 @@ jobs:
       - name: Build Docker image
         run: |
           docker build \
+            --target runtime \
             -t ci-cd-playground:${GITHUB_SHA} \
             .
 
