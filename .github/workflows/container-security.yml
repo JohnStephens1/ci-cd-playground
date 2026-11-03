@@ -29,5 +29,5 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ci-cd-playground:${{ github.sha }}
-          trivy-config: trivy.yaml
+          trivy-config: trivy.yml
           trivyignores: .trivyignore
