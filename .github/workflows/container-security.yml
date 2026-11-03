@@ -1,0 +1,33 @@
+name: Container Security
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-security:
+    name: Docker Build & Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --target runtime \
+            -t ci-cd-playground:${GITHUB_SHA} \
+            .
+
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ci-cd-playground:${{ github.sha }}
+          trivy-config: trivy.yml
+          trivyignores: .trivyignore

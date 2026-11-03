@@ -1,0 +1,6 @@
+# Python slim base image vulnerabilities
+CVE-2026-114613  # msgpack
+GHSA-6v7p-g79w-8964  # msgpack
+CVE-2025-47273  # setuptools
+CVE-2026-97687  # urllib3
+CVE-2026-97689  # urllib3
