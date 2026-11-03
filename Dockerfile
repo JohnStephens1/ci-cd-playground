@@ -19,12 +19,6 @@ FROM python:3.13-slim-trixie AS runtime
 
 WORKDIR /app
 
-# Update vulnerable packages inherited from the base image
-RUN python -m pip install --no-cache-dir --upgrade \
-    "msgpack>=1.2.3" \
-    "setuptools>=78.1.1" \
-    "urllib3>=2.8.0"
-
 COPY --from=build /app/.venv /app/.venv
 
 ENV PYTHONUNBUFFERED=1
