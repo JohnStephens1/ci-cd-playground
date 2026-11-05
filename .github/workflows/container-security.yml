@@ -2,9 +2,9 @@ name: Container Security
 
 on:
   push:
-    branches:
-      - "**"
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_call:
 
 permissions: {}
