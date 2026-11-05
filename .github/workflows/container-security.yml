@@ -26,7 +26,7 @@ jobs:
         run: |
           docker build \
             --target runtime \
-            -t ci-cd-playground:${GITHUB_SHA} \
+            -t "ci-cd-playground:${GITHUB_SHA}" \
             .
 
       - name: Scan Docker image with Trivy
