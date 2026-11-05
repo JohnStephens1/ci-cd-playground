@@ -1,0 +1,73 @@
+name: Continuous Delivery
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: Target environment to deploy
+        required: true
+        type: choice
+        options:
+          - both
+          - staging
+          - production
+        default: both
+
+permissions: {}
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI Validation & Build
+    permissions:
+      contents: read
+    uses: $/.github/workflows/ci.yml
+
+  docker-publish:
+    name: Docker Build & Publish
+    permissions:
+      contents: read
+      packages: write
+    needs: [ci]
+    uses: $/.github/workflows/docker-publish.yml
+
+  deploy-staging:
+    name: Deploy to Staging
+    permissions:
+      contents: read
+    needs: [docker-publish]
+    if: github.event_name == 'push' || inputs.deploy_target == 'staging' || inputs.deploy_target == 'both'
+    uses: $/.github/workflows/deploy.yml
+    with:
+      environment: staging
+      service_url: https://ci-cd-playground-staging.onrender.com
+      image_tag: ${{ github.sha }}
+      expected_commit: ${{ github.sha }}
+    secrets:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_SERVICE_ID: ${{ secrets.RENDER_STAGING_SERVICE_ID }}
+
+  deploy-production:
+    name: Deploy to Production
+    permissions:
+      contents: read
+    needs: [docker-publish, deploy-staging]
+    if: |
+      !cancelled() &&
+      needs.docker-publish.result == 'success' &&
+      (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped') &&
+      (github.event_name == 'push' || inputs.deploy_target == 'production' || inputs.deploy_target == 'both')
+    uses: $/.github/workflows/deploy.yml
+    with:
+      environment: production
+      service_url: https://ci-cd-playground-production.onrender.com
+      image_tag: ${{ github.sha }}
+      expected_commit: ${{ github.sha }}
+    secrets:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_SERVICE_ID: ${{ secrets.RENDER_PRODUCTION_SERVICE_ID }}

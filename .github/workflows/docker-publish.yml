@@ -1,0 +1,101 @@
+name: Docker Build & Publish
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: Additional tag to publish (e.g. release tag or latest)
+        required: false
+        type: string
+        default: ""
+
+permissions: {}
+
+jobs:
+  docker-publish:
+    name: Build, test and publish Docker image
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Define image name
+        run: |
+          IMAGE_NAME="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "IMAGE_NAME=$IMAGE_NAME" >> "$GITHUB_ENV"
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            --build-arg APP_VERSION="${GITHUB_REF_NAME}" \
+            --build-arg GIT_SHA="${GITHUB_SHA}" \
+            --target runtime \
+            -t "ci-cd-playground:${GITHUB_SHA}" \
+            .
+
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: ci-cd-playground:${{ github.sha }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Start container
+        run: |
+          docker run -d \
+            --name ci-cd-playground \
+            -p 8000:8000 \
+            "ci-cd-playground:${GITHUB_SHA}"
+
+      - name: Test health endpoint
+        run: |
+          for _ in {1..30}; do
+            if curl --fail --silent http://localhost:8000/health; then
+              echo "Health check successful!"
+              exit 0
+            fi
+
+            echo "Waiting for application..."
+            sleep 2
+          done
+
+          echo "Health check failed!"
+          docker logs ci-cd-playground
+          exit 1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6  # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag and push Docker image
+        env:
+          ADDITIONAL_TAG: ${{ inputs.image_tag }}
+        run: |
+          docker tag \
+            "ci-cd-playground:${GITHUB_SHA}" \
+            "$IMAGE_NAME:${GITHUB_SHA}"
+          docker push "$IMAGE_NAME:${GITHUB_SHA}"
+
+          if [ -n "$ADDITIONAL_TAG" ]; then
+            docker tag \
+              "ci-cd-playground:${GITHUB_SHA}" \
+              "$IMAGE_NAME:$ADDITIONAL_TAG"
+            docker push "$IMAGE_NAME:$ADDITIONAL_TAG"
+          fi
+
+      - name: Stop and remove container
+        if: always()
+        run: docker rm -f ci-cd-playground || true

@@ -1,0 +1,140 @@
+name: Deploy Service
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Target deployment environment (staging or production)
+        required: true
+        type: string
+      service_url:
+        description: Service URL to verify health and version
+        required: true
+        type: string
+      image_tag:
+        description: Docker image tag to deploy (e.g. commit SHA or version tag)
+        required: false
+        type: string
+        default: ""
+      expected_commit:
+        description: Expected git commit SHA to verify against the /version endpoint
+        required: false
+        type: string
+        default: ""
+    secrets:
+      RENDER_API_KEY:
+        description: Render API authorization key
+        required: true
+      RENDER_SERVICE_ID:
+        description: Render Service ID to trigger deploy for
+        required: true
+
+permissions: {}
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ inputs.service_url }}
+
+    steps:
+      - name: Trigger Render deployment
+        id: deploy
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+        run: |
+          IMAGE_URL="${IMAGE_NAME,,}:${IMAGE_TAG}"
+
+          RESPONSE=$(curl --fail-with-body --silent --show-error \
+            --request POST \
+            --url "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+            --header "Authorization: Bearer ${RENDER_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data "$(jq -n --arg image "$IMAGE_URL" \
+              '{imageUrl: $image}')")
+
+          DEPLOY_ID=$(echo "$RESPONSE" | jq -r '.id')
+
+          if [ -z "$DEPLOY_ID" ] || [ "$DEPLOY_ID" = "null" ]; then
+            echo "Could not retrieve deployment ID."
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          echo "Deployment started: $DEPLOY_ID"
+          echo "deploy_id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Render deployment
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
+        run: |
+          for _ in {1..60}; do
+            RESPONSE=$(curl --fail-with-body --silent --show-error \
+              --url "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys/${DEPLOY_ID}" \
+              --header "Authorization: Bearer ${RENDER_API_KEY}")
+
+            STATUS=$(echo "$RESPONSE" | jq -r '.status')
+
+            echo "Deployment status: $STATUS"
+
+            if [ "$STATUS" = "live" ]; then
+              echo "Deployment completed successfully."
+              exit 0
+            fi
+
+            case "$STATUS" in
+              build_failed|update_failed|pre_deploy_failed|canceled|deactivated)
+                echo "Deployment failed with status: $STATUS"
+                exit 1
+                ;;
+            esac
+
+            sleep 30
+          done
+
+          echo "Timed out waiting for Render deployment."
+          exit 1
+
+      - name: Verify service health and version
+        env:
+          SERVICE_URL: ${{ inputs.service_url }}
+          EXPECTED_SHA: ${{ inputs.expected_commit || github.sha }}
+        run: |
+          for _ in {1..30}; do
+            if ! curl --fail --silent --show-error \
+              "$SERVICE_URL/health"; then
+              echo "Waiting for service health..."
+              sleep 10
+              continue
+            fi
+
+            RESPONSE=$(curl --fail --silent \
+              "$SERVICE_URL/version")
+
+            ACTUAL_SHA=$(echo "$RESPONSE" | jq -r '.commit')
+
+            if [ -n "$EXPECTED_SHA" ] && [ "$ACTUAL_SHA" = "$EXPECTED_SHA" ]; then
+              echo "Service is running the expected version: $ACTUAL_SHA"
+              exit 0
+            elif [ -z "$EXPECTED_SHA" ]; then
+              echo "Service health check verified."
+              exit 0
+            fi
+
+            echo "Expected: $EXPECTED_SHA"
+            echo "Actual: $ACTUAL_SHA"
+            sleep 10
+          done
+
+          echo "Service verification failed."
+          exit 1
