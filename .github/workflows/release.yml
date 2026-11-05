@@ -11,6 +11,8 @@ on:
         required: false
         type: string
 
+permissions: {}
+
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -18,24 +20,29 @@ concurrency:
 jobs:
   ci:
     name: CI Validation & Build
-    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+    uses: $/.github/workflows/ci.yml
 
   docker-security:
     name: Docker Build & Security Scan
-    uses: ./.github/workflows/container-security.yml
+    permissions:
+      contents: read
+    uses: $/.github/workflows/container-security.yml
 
   docker-publish:
     name: Build, test and publish Docker image
-    needs: [ci, docker-security]
-    runs-on: ubuntu-latest
-
     permissions:
       contents: read
       packages: write
+    needs: [ci, docker-security]
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Define image name
         run: |
@@ -113,6 +120,8 @@ jobs:
 
   deploy-staging:
     name: Deploy to staging
+    permissions:
+      contents: read
     needs: [docker-publish]
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -200,10 +209,11 @@ jobs:
 
   deploy-production:
     name: Deploy to production
+    permissions:
+      contents: read
     needs: [deploy-staging]
     runs-on: ubuntu-latest
     timeout-minutes: 35
-
     environment:
       name: production
       url: https://ci-cd-playground-production.onrender.com
@@ -304,21 +314,23 @@ jobs:
 
   publish-testpypi:
     name: Publish to TestPyPI
+    permissions:
+      contents: read
+      id-token: write # Required for Trusted Publishing (OIDC)
     needs: [ci, docker-security]
     runs-on: ubuntu-latest
     environment:
       name: testpypi
       url: https://test.pypi.org/
-    permissions:
-      id-token: write # Required for Trusted Publishing (OIDC)
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          enable-cache: true
 
       - name: Download built packages from CI
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
@@ -332,18 +344,19 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [ci, docker-security]
-    runs-on: ubuntu-latest
     permissions:
       contents: write
+    needs: [ci, docker-security]
+    runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          enable-cache: true
 
       - name: Resolve release tag
         id: resolve-tag
@@ -369,10 +382,13 @@ jobs:
 
       - name: Create GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.resolve-tag.outputs.tag }}
         run: |
-          TAG="${{ steps.resolve-tag.outputs.tag }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: $TAG"
+            exit 1
+          fi
           gh release create "$TAG" \
             dist/* \
             --title "Release $TAG" \
