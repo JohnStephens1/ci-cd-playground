@@ -140,14 +140,14 @@ jobs:
 
       - name: Verify wheel installation and import
         run: |
-          uv run --isolated --no-project --with dist/*.whl \
-            python -c "
-              import ci_cd_playground
-              print(
-                  'ci_cd_playground imported successfully:',
-                  ci_cd_playground.hello()
-              )
-            "
+          uv run --isolated --no-project --with dist/*.whl python - <<'PY'
+          import ci_cd_playground
+
+          print(
+              'ci_cd_playground imported successfully:',
+              ci_cd_playground.hello()
+          )
+          PY
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  #  v7.0.2
