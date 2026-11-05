@@ -18,6 +18,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify:
+    name: Verify existing CI and security results
+    permissions:
+      actions: read
+      contents: read
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify checks on tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          for workflow in ci.yml container-security.yml; do
+            echo "Checking $workflow for commit $TAG_SHA"
+
+            runs=$(gh run list \
+              --workflow "$workflow" \
+              --commit "$TAG_SHA" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json status,conclusion,event,headBranch)
+
+            success=$(echo "$runs" | jq \
+              '[.[] | select(
+                .status == "completed" and
+                .conclusion == "success" and
+                .event == "push" and
+                .headBranch == "main"
+              )] | length')
+
+            if [ "$success" -eq 0 ]; then
+              echo "::error::No successful main-branch run found for $workflow on $TAG_SHA"
+              exit 1
+            fi
+
+            echo "$workflow passed."
+          done
+
   ci:
     name: CI Validation & Build
     permissions:
@@ -35,7 +75,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    needs: [ci, docker-security]
+    needs: [ci, docker-security, verify]
     runs-on: ubuntu-latest
 
     steps:
