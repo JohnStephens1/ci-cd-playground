@@ -22,13 +22,13 @@ jobs:
     name: CI Validation & Build
     permissions:
       contents: read
-    uses: ./.github/workflows/ci.yml
+    uses: $/.github/workflows/ci.yml
 
   docker-security:
     name: Docker Build & Security Scan
     permissions:
       contents: read
-    uses: ./.github/workflows/container-security.yml
+    uses: $/.github/workflows/container-security.yml
 
   docker-publish:
     name: Build, test and publish Docker image
@@ -331,8 +331,6 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          enable-cache: true
 
       - name: Download built packages from CI
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
@@ -359,8 +357,6 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          enable-cache: true
 
       - name: Resolve release tag
         id: resolve-tag
@@ -387,8 +383,12 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.resolve-tag.outputs.tag }}
         run: |
-          TAG="${{ steps.resolve-tag.outputs.tag }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: $TAG"
+            exit 1
+          fi
           gh release create "$TAG" \
             dist/* \
             --title "Release $TAG" \
