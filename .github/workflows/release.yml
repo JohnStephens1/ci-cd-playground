@@ -11,6 +11,8 @@ on:
         required: false
         type: string
 
+permissions: {}
+
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -18,20 +20,23 @@ concurrency:
 jobs:
   ci:
     name: CI Validation & Build
+    permissions:
+      contents: read
     uses: ./.github/workflows/ci.yml
 
   docker-security:
     name: Docker Build & Security Scan
+    permissions:
+      contents: read
     uses: ./.github/workflows/container-security.yml
 
   docker-publish:
     name: Build, test and publish Docker image
-    needs: [ci, docker-security]
-    runs-on: ubuntu-latest
-
     permissions:
       contents: read
       packages: write
+    needs: [ci, docker-security]
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -115,6 +120,8 @@ jobs:
 
   deploy-staging:
     name: Deploy to staging
+    permissions:
+      contents: read
     needs: [docker-publish]
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -202,10 +209,11 @@ jobs:
 
   deploy-production:
     name: Deploy to production
+    permissions:
+      contents: read
     needs: [deploy-staging]
     runs-on: ubuntu-latest
     timeout-minutes: 35
-
     environment:
       name: production
       url: https://ci-cd-playground-production.onrender.com
@@ -306,13 +314,15 @@ jobs:
 
   publish-testpypi:
     name: Publish to TestPyPI
+    permissions:
+      contents: read
+      id-token: write # Required for Trusted Publishing (OIDC)
     needs: [ci, docker-security]
     runs-on: ubuntu-latest
     environment:
       name: testpypi
       url: https://test.pypi.org/
-    permissions:
-      id-token: write # Required for Trusted Publishing (OIDC)
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -336,10 +346,11 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [ci, docker-security]
-    runs-on: ubuntu-latest
     permissions:
       contents: write
+    needs: [ci, docker-security]
+    runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
