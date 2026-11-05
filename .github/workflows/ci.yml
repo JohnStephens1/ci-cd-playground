@@ -93,12 +93,36 @@ jobs:
       - name: Run Pytest
         run: uv run pytest
 
+  zizmor:
+    name: Security Check (zizmor)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run zizmor
+        run: uv run zizmor --format=github .
+
   build:
     name: Build (sdist & wheel)
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test]
+    needs: [lint, typecheck, test, zizmor]
 
     steps:
       - name: Checkout repository
