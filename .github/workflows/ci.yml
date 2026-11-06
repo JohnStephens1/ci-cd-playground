@@ -193,4 +193,4 @@ jobs:
       - name: Validate image
         uses: $/.github/actions/validate-image
         with:
-          image: "ci-cd-playground:${GITHUB_SHA}"
+          image: "ci-cd-playground:${{ github.sha }}"
