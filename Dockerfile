@@ -2,7 +2,7 @@ FROM python:3.13-slim-trixie AS build
 
 # apply OS security updates
 RUN apt-get update \
-    && apt-get install -y --only-upgrade apt \
+    && apt-get install -y --only-upgrade apt zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -24,7 +24,7 @@ FROM python:3.13-slim-trixie AS runtime
 
 # apply OS security updates
 RUN apt-get update \
-    && apt-get install -y --only-upgrade apt \
+    && apt-get install -y --only-upgrade apt zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
