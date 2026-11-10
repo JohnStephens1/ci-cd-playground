@@ -33,6 +33,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      attestations: write
+      id-token: write
     needs: [ci]
     uses: $/.github/workflows/docker-publish.yml
 
