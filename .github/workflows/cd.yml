@@ -3,6 +3,8 @@ name: Continuous Delivery
 on:
   push:
     branches: [main]
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       deploy_target:
@@ -53,6 +55,11 @@ jobs:
     secrets:
       RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
       RENDER_SERVICE_ID: ${{ secrets.RENDER_STAGING_SERVICE_ID }}
+
+  create-release:
+    needs: [ci, docker-publish, deploy-staging]
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    uses: $/.github/workflows/release.yml
 
   deploy-production:
     name: Deploy to Production
