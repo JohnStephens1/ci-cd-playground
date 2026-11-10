@@ -91,6 +91,12 @@ jobs:
 
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
+          docker tag \
+            "ci-cd-playground:${GITHUB_SHA}" \
+            "$IMAGE_NAME:latest"
+
+          docker push "$IMAGE_NAME:latest"
+
           if [[ -n "$ADDITIONAL_TAG" ]]; then
             docker tag \
               "ci-cd-playground:${GITHUB_SHA}" \
