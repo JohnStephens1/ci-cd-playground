@@ -1,10 +1,10 @@
-name: Docker Build & Publish
+name: docker-publish
 
 on:
   workflow_call:
     inputs:
       image_tag:
-        description: Additional tag to publish (e.g. release tag or latest)
+        description: Additional tag to publish
         required: false
         type: string
         default: ""
@@ -13,11 +13,13 @@ permissions: {}
 
 jobs:
   docker-publish:
-    name: Build, test and publish Docker image
+    name: Build, validate, publish and attest
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    runs-on: ubuntu-latest
+      id-token: write
+      attestations: write
 
     steps:
       - name: Checkout repository
@@ -25,39 +27,86 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate image
-        uses: $/.github/actions/validate-image
-        with:
-          image: "ci-cd-playground:${{ github.sha }}"
-
       - name: Define image name
         run: |
           IMAGE_NAME="ghcr.io/${GITHUB_REPOSITORY,,}"
           echo "IMAGE_NAME=$IMAGE_NAME" >> "$GITHUB_ENV"
 
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+
+      # SLSA v1.0 Build Level 3 requires building in the same job as attestation
+
+      # 1. build exactly once, keeping the image locally
+      - name: Build Docker image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}
+          target: runtime
+          tags: ci-cd-playground:${{ github.sha }}
+          load: true
+
+      # 2. scan and test the locally built image
+      - name: Validate image
+        uses: $/.github/actions/validate-image
+        with:
+          image: ci-cd-playground:${{ github.sha }}
+
+      # 3. only log in after validation succeeds
       - name: Log in to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6  # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Tag and push Docker image
+      # 4. push the existing local image
+      - name: Push Docker image
+        id: push
         env:
           ADDITIONAL_TAG: ${{ inputs.image_tag }}
+        shell: bash
         run: |
+          set -euo pipefail
+
           docker tag \
             "ci-cd-playground:${GITHUB_SHA}" \
             "$IMAGE_NAME:${GITHUB_SHA}"
-          docker push "$IMAGE_NAME:${GITHUB_SHA}"
 
-          if [ -n "$ADDITIONAL_TAG" ]; then
+          docker push "$IMAGE_NAME:${GITHUB_SHA}" \
+            2>&1 | tee /tmp/docker-push.log
+
+          DIGEST=$(sed -nE \
+            's/.*digest: (sha256:[a-f0-9]{64}).*/\1/p' \
+            /tmp/docker-push.log | tail -n 1)
+
+          if [[ ! "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::Could not determine pushed image digest"
+            exit 1
+          fi
+
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+          if [[ -n "$ADDITIONAL_TAG" ]]; then
             docker tag \
               "ci-cd-playground:${GITHUB_SHA}" \
               "$IMAGE_NAME:$ADDITIONAL_TAG"
+
             docker push "$IMAGE_NAME:$ADDITIONAL_TAG"
           fi
 
-      - name: Stop and remove container
+      # 5. attest the exact digest published above
+      - name: Generate SLSA provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Cleanup
         if: always()
-        run: docker rm -f ci-cd-playground || true
+        run: docker rm -f app-under-test || true
