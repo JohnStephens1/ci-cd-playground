@@ -70,7 +70,7 @@ runs:
           done
 
           echo "Health check failed!"
-          docker logs ci-cd-playground
+          docker logs app-under-test
           exit 1
 
     - name: Cleanup
