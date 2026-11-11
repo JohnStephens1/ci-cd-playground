@@ -1,67 +1,254 @@
 name: Release
 
 on:
-  workflow_call:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
+      commit_sha:
+        description: "Commit SHA to release"
+        required: true
+        type: string
       tag:
-        description: "Release tag (e.g. v0.1.0). If omitted, the triggering ref is used."
-        required: false
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
         type: string
 
 permissions: {}
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
-  resolve-tag:
-    name: Resolve release tag
+  validate-release-reference:
+    name: Validate release reference
     permissions:
       contents: read
     runs-on: ubuntu-latest
 
     outputs:
-      tag: ${{ steps.resolve-tag.outputs.tag }}
+      tag: ${{ steps.validate.outputs.tag }}
+      sha: ${{ steps.validate.outputs.sha }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout target commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
-          enable-cache: true
+          enable-cache: false
           python-version: "3.13"
 
-      - name: Resolve release tag
-        id: resolve-tag
+      - name: Validate release tag and commit
+        id: validate
+        shell: bash
         env:
-          TAG: ${{ inputs.tag || github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_TAG: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_SHA: ${{ inputs.commit_sha }}
         run: |
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
 
-          # Compare tag with package version in pyproject.toml
-          PROJECT_VERSION="$(uv version --short)"
-          echo "Detected project version: $PROJECT_VERSION"
-          echo "Target release tag: $TAG"
-
-          if [ "$TAG" != "v$PROJECT_VERSION" ]; then
-            echo "Release tag '$TAG' does not match project version 'v$PROJECT_VERSION' in pyproject.toml"
+          # Resolve release references.
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            tag="$PUSH_TAG"
+            sha="$(git rev-parse --verify "refs/tags/${tag}^{commit}")"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag="$INPUT_TAG"
+            sha="$INPUT_SHA"
+          else
+            echo "::error::Unsupported release event: $EVENT_NAME"
             exit 1
           fi
 
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Invalid release tag: $TAG"
+          # Require both references.
+          [[ -n "$tag" ]] || {
+            echo "::error::Release tag is missing"
+            exit 1
+          }
+
+          [[ -n "$sha" ]] || {
+            echo "::error::Commit SHA is missing"
+            exit 1
+          }
+
+          # Validate tag format.
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid release tag: $tag"
             exit 1
           fi
+
+          # Validate SHA format.
+          if [[ ! "$sha" =~ ^([0-9a-fA-F]{40})$ ]]; then
+            echo "::error::Invalid commit SHA: $sha"
+            exit 1
+          fi
+
+          # Normalize and verify the target commit.
+          sha="$(git rev-parse --verify "${sha}^{commit}")"
+
+          # Ensure the tag exists and resolves to a commit.
+          tag_sha="$(git rev-parse --verify "refs/tags/${tag}^{commit}")"
+
+          # Verify tag and supplied SHA reference the same commit.
+          if [[ "$tag_sha" != "$sha" ]]; then
+            echo "::error::Tag $tag resolves to $tag_sha, not $sha"
+            exit 1
+          fi
+
+          project_version="$(uv version --short)"
+
+          if [[ -z "$project_version" ]]; then
+            echo "::error::Unable to determine project version from pyproject.toml"
+            exit 1
+          fi
+
+          expected_tag="v${project_version}"
+
+          if [[ "$tag" != "$expected_tag" ]]; then
+            echo "::error::Tag $tag does not match project version $expected_tag"
+            exit 1
+          fi
+
+          # Export validated references.
+          {
+            echo "tag=$tag"
+            echo "sha=$sha"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Validated release: $tag ($sha)"
+
+  validate-cd:
+    name: Find and validate CD artifact
+    needs: [validate-release-reference]
+    permissions:
+      actions: read
+      contents: read
+    runs-on: ubuntu-latest
+
+    outputs:
+      run_id: ${{ steps.find-artifact.outputs.run_id }}
+
+    steps:
+      - name: Find and validate CD artifact
+        id: find-artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.validate-release-reference.outputs.sha }}
+          TAG: ${{ needs.validate-release-reference.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          echo "Looking for CD run for $SHA ($TAG)"
+
+          # Return the newest CD run for the target SHA.
+          find_latest_run() {
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/cd.yml/runs?head_sha=${SHA}&per_page=100" |
+              jq -s '
+                [.[].workflow_runs[]] |
+                sort_by(.created_at) |
+                last // empty
+              '
+          }
+
+          # 1. Find the CD run
+          run=""
+
+          for attempt in {1..10}; do
+            run="$(find_latest_run)"
+
+            if [[ -n "$run" ]]; then
+              break
+            fi
+
+            echo "No matching CD run found (attempt $attempt/10)"
+            sleep 6
+          done
+
+          [[ -n "$run" ]] || {
+            echo "::error::No matching CD run found"
+            exit 1
+          }
+
+          # 2. Wait for completion, re-evaluating the latest run
+          for attempt in {1..60}; do
+            latest="$(find_latest_run)"
+
+            if [[ -z "$latest" ]]; then
+              echo "::error::Previously discovered CD run disappeared"
+              exit 1
+            fi
+
+            run_id="$(jq -r '.id' <<< "$latest")"
+            status="$(jq -r '.status' <<< "$latest")"
+            conclusion="$(jq -r '.conclusion // empty' <<< "$latest")"
+
+            echo "CD run $run_id: $status ($conclusion)"
+
+            if [[ "$status" == "completed" ]]; then
+              [[ "$conclusion" == "success" ]] || {
+                echo "::error::CD run $run_id failed: $conclusion"
+                exit 1
+              }
+              break
+            fi
+
+            case "$status" in
+              queued|waiting|in_progress|requested|pending)
+                ;;
+              *)
+                echo "::error::Unexpected CD run status: $status"
+                exit 1
+                ;;
+            esac
+
+            if (( attempt == 60 )); then
+              echo "::error::Timed out waiting for CD run"
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          # 3. Validate the artifact
+          artifacts="$(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" |
+            jq -s '[.[].artifacts[] | select(.name == "dist-packages")]'
+          )"
+
+          count="$(jq 'length' <<< "$artifacts")"
+
+          [[ "$count" -eq 1 ]] || {
+            echo "::error::Expected exactly one dist-packages artifact, found $count"
+            exit 1
+          }
+
+          expired="$(jq -r '.[0].expired' <<< "$artifacts")"
+
+          [[ "$expired" == "false" ]] || {
+            echo "::error::dist-packages artifact has expired"
+            exit 1
+          }
+
+          # 4. Publish only after all validation succeeds
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "Validated CD run: $run_id"
 
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: [resolve-tag]
+    needs: [validate-release-reference, validate-cd]
     permissions:
       contents: read
       id-token: write  # Required for Trusted Publishing (OIDC)
@@ -71,18 +258,27 @@ jobs:
       url: https://test.pypi.org/
 
     steps:
-      - name: Checkout repository
+      - name: Checkout target commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ needs.validate-release-reference.outputs.sha }}
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: false
+          python-version: "3.13"
 
       - name: Download built packages from CI
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: dist-packages
+          run-id: ${{ needs.validate-cd.outputs.run_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
           path: dist/
 
       - name: Publish to TestPyPI
@@ -93,28 +289,23 @@ jobs:
     name: Create GitHub Release
     permissions:
       contents: write
-    needs: [resolve-tag, publish-testpypi]
+    needs: [validate-release-reference, validate-cd, publish-testpypi]
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
-
       - name: Download built packages from CI
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: dist-packages
+          run-id: ${{ needs.validate-cd.outputs.run_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
           path: dist/
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.resolve-tag.outputs.tag }}
+          TAG: ${{ needs.validate-release-reference.outputs.tag }}
         run: |
           gh release create "$TAG" \
             dist/* \
