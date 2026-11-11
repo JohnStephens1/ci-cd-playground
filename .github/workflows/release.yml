@@ -289,7 +289,7 @@ jobs:
     name: Create GitHub Release
     permissions:
       contents: write
-    needs: [validate-release-reference, validate-cd, publish-testpypi]
+    needs: [validate-release-reference, validate-cd]
     runs-on: ubuntu-latest
 
     steps:
