@@ -1,12 +1,20 @@
 name: Release
 
 on:
+  push:
+    tags:
+      - "v*"
+  # yeet this call? or add inputs
   workflow_call:
   workflow_dispatch:
     inputs:
+      commit_sha:
+        description: "Commit SHA to release"
+        required: true
+        type: string
       tag:
-        description: "Release tag (e.g. v0.1.0). If omitted, the triggering ref is used."
-        required: false
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
         type: string
 
 permissions: {}
@@ -16,10 +24,160 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-cd:
+    name: Find and validate CD artifact
+    permissions:
+      actions: read
+      contents: read
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SHA: ${{ inputs.commit_sha || github.sha }}
+
+    outputs:
+      run_id: ${{ steps.find-artifact.outputs.run_id }}
+
+    steps:
+      - name: Find and validate CD artifact
+        id: find-artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          set -euo pipefail
+
+          # 1. Resolve inputs
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            [[ "$REF" == refs/tags/* ]] || {
+              echo "::error::Expected a tag push"
+              exit 1
+            }
+            tag="${REF#refs/tags/}"
+            sha="$(git rev-parse "${tag}^{commit}")"
+          else
+            tag="$INPUT_TAG"
+            sha="$INPUT_SHA"
+          fi
+
+          [[ -n "$tag" && -n "$sha" ]] || {
+            echo "::error::Missing tag or commit SHA"
+            exit 1
+          }
+
+          resolved_sha="$(git rev-parse "${tag}^{commit}")"
+          [[ "$resolved_sha" == "$sha" ]] || {
+            echo "::error::Tag and commit SHA do not match"
+            exit 1
+          }
+
+          echo "Looking for CD run for $sha ($tag)"
+
+          # Return the newest CD run for the target SHA.
+          find_latest_run() {
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/cd.yml/runs?head_sha=${sha}&per_page=100" |
+              jq -s '
+                [.[].workflow_runs[]] |
+                sort_by(.created_at) |
+                last // empty
+              '
+          }
+
+          # 2. Discover the CD run
+          run=""
+
+          for attempt in {1..10}; do
+            run="$(find_latest_run)"
+
+            if [[ -n "$run" ]]; then
+              break
+            fi
+
+            echo "No matching CD run found (attempt $attempt/10)"
+            sleep 6
+          done
+
+          [[ -n "$run" ]] || {
+            echo "::error::No matching CD run found"
+            exit 1
+          }
+
+          run_id="$(jq -r '.id' <<< "$run")"
+
+          # 3. Wait for completion, re-evaluating the latest run
+          for attempt in {1..60}; do
+            latest="$(find_latest_run)"
+
+            if [[ -z "$latest" ]]; then
+              echo "::error::Previously discovered CD run disappeared"
+              exit 1
+            fi
+
+            run_id="$(jq -r '.id' <<< "$latest")"
+            status="$(jq -r '.status' <<< "$latest")"
+            conclusion="$(jq -r '.conclusion // empty' <<< "$latest")"
+
+            echo "CD run $run_id: $status ($conclusion)"
+
+            if [[ "$status" == "completed" ]]; then
+              [[ "$conclusion" == "success" ]] || {
+                echo "::error::CD run $run_id failed: $conclusion"
+                exit 1
+              }
+              break
+            fi
+
+            case "$status" in
+              queued|waiting|in_progress)
+                ;;
+              *)
+                echo "::error::Unexpected CD run status: $status"
+                exit 1
+                ;;
+            esac
+
+            if (( attempt == 60 )); then
+              echo "::error::Timed out waiting for CD run"
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          # 4. Validate the artifact
+          artifacts="$(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" |
+            jq -s '[.[].artifacts[] | select(.name == "dist-packages")]'
+          )"
+
+          count="$(jq 'length' <<< "$artifacts")"
+
+          [[ "$count" -eq 1 ]] || {
+            echo "::error::Expected exactly one dist-packages artifact, found $count"
+            exit 1
+          }
+
+          expired="$(jq -r '.[0].expired' <<< "$artifacts")"
+
+          [[ "$expired" == "false" ]] || {
+            echo "::error::dist-packages artifact has expired"
+            exit 1
+          }
+
+          # 5. Publish only after all validation succeeds
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "Validated CD run: $run_id"
+
   resolve-tag:
     name: Resolve release tag
     permissions:
       contents: read
+    # if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
 
     outputs:
@@ -40,10 +198,9 @@ jobs:
       - name: Resolve release tag
         id: resolve-tag
         env:
+          # this correct ???
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
           # Compare tag with package version in pyproject.toml
           PROJECT_VERSION="$(uv version --short)"
           echo "Detected project version: $PROJECT_VERSION"
@@ -59,9 +216,11 @@ jobs:
             exit 1
           fi
 
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: [resolve-tag]
+    needs: [resolve-tag, validate-cd]
     permissions:
       contents: read
       id-token: write  # Required for Trusted Publishing (OIDC)
@@ -83,6 +242,7 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: dist-packages
+          run-id: ${{ needs.validate-cd.outputs.run_id }}
           path: dist/
 
       - name: Publish to TestPyPI
@@ -93,10 +253,11 @@ jobs:
     name: Create GitHub Release
     permissions:
       contents: write
-    needs: [resolve-tag, publish-testpypi]
+    needs: [resolve-tag, validate-cd, publish-testpypi]
     runs-on: ubuntu-latest
 
     steps:
+      # checkout and uv install necessary?
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -109,6 +270,7 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: dist-packages
+          run-id: ${{ needs.validate-cd.outputs.run_id }}
           path: dist/
 
       - name: Create GitHub Release
