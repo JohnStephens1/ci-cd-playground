@@ -54,14 +54,6 @@ jobs:
       RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
       RENDER_SERVICE_ID: ${{ secrets.RENDER_STAGING_SERVICE_ID }}
 
-  create-release:
-    needs: [ci, docker-publish, deploy-staging]
-    permissions:
-      contents: write
-      id-token: write
-    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
-    uses: $/.github/workflows/release.yml
-
   deploy-production:
     name: Deploy to Production
     permissions:
