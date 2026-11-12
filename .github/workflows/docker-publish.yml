@@ -8,6 +8,10 @@ on:
         required: false
         type: string
         default: ""
+    outputs:
+      image_digest:
+        description: "Published Docker image digest"
+        value: ${{ jobs.docker-publish.outputs.image_digest }}
 
 permissions: {}
 
@@ -20,6 +24,9 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+
+    outputs:
+      image_digest: ${{ steps.push.outputs.digest }}
 
     steps:
       - name: Checkout repository
