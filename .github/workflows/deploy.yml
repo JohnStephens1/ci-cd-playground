@@ -44,7 +44,7 @@ jobs:
       url: ${{ inputs.service_url }}
 
     steps:
-      - name: Verify image provenance
+      - name: Verify SLSA provenance
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE_NAME: ghcr.io/${{ github.repository }}
@@ -55,6 +55,19 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/docker-publish.yml" \
             --source-ref "refs/heads/main"
+
+      - name: Verify SBOM attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          gh attestation verify \
+            "oci://${IMAGE_NAME,,}@${IMAGE_DIGEST}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/docker-publish.yml" \
+            --source-ref "refs/heads/main" \
+            --predicate-type https://spdx.dev/Document/v2.3
 
       - name: Trigger Render deployment
         id: deploy
