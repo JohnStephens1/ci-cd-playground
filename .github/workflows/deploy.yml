@@ -11,11 +11,10 @@ on:
         description: Service URL to verify health and version
         required: true
         type: string
-      image_tag:
-        description: Docker image tag to deploy (e.g. commit SHA or version tag)
-        required: false
+      image_digest:
+        description: Docker image digest to deploy
+        required: true
         type: string
-        default: ""
       expected_commit:
         description: Expected git commit SHA to verify against the /version endpoint
         required: false
@@ -49,9 +48,9 @@ jobs:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
           IMAGE_NAME: ghcr.io/${{ github.repository }}
-          IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
         run: |
-          IMAGE_URL="${IMAGE_NAME,,}:${IMAGE_TAG}"
+          IMAGE_URL="${IMAGE_NAME,,}@${IMAGE_DIGEST}"
 
           RESPONSE=$(curl --fail-with-body --silent --show-error \
             --request POST \

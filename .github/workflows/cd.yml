@@ -48,7 +48,7 @@ jobs:
     with:
       environment: staging
       service_url: https://ci-cd-playground-staging.onrender.com
-      image_tag: ${{ github.sha }}
+      image_digest: ${{ needs.docker-publish.outputs.image_digest }}
       expected_commit: ${{ github.sha }}
     secrets:
       RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
@@ -68,7 +68,7 @@ jobs:
     with:
       environment: production
       service_url: https://ci-cd-playground-production.onrender.com
-      image_tag: ${{ github.sha }}
+      image_digest: ${{ needs.docker-publish.outputs.image_digest }}
       expected_commit: ${{ github.sha }}
     secrets:
       RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
