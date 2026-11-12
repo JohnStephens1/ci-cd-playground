@@ -143,7 +143,7 @@ jobs:
           if-no-files-found: error
 
   test-build:
-    name: Test built distribution
+    name: Test built distributions
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -161,19 +161,36 @@ jobs:
           name: dist-packages
           path: dist/
 
-      - name: Create isolated test environment
-        run: uv venv
+      - name: Create isolated wheel test environment
+        run: uv venv .venv-wheel
 
       - name: Install built wheel
-        run: uv pip install dist/*.whl
+        run: uv pip install --python .venv-wheel/bin/python dist/*.whl
 
       - name: Verify wheel installation and import
         run: |
-          uv run --no-project python - <<'PY'
+          .venv-wheel/bin/python - <<'PY'
           import ci_cd_playground
 
           print(
-              'ci_cd_playground imported successfully:',
+              'Wheel installation successful:',
+              ci_cd_playground.hello()
+          )
+          PY
+
+      - name: Create isolated sdist test environment
+        run: uv venv .venv-sdist
+
+      - name: Install built source distribution
+        run: uv pip install --python .venv-sdist/bin/python dist/*.tar.gz
+
+      - name: Verify sdist installation and import
+        run: |
+          .venv-sdist/bin/python - <<'PY'
+          import ci_cd_playground
+
+          print(
+              'Sdist installation successful:',
               ci_cd_playground.hello()
           )
           PY
