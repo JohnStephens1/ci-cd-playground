@@ -42,6 +42,8 @@ jobs:
     name: Deploy to Staging
     permissions:
       contents: read
+      attestations: read
+      packages: read
     needs: [docker-publish]
     if: github.event_name == 'push' || inputs.deploy_target == 'staging' || inputs.deploy_target == 'both'
     uses: $/.github/workflows/deploy.yml
@@ -58,6 +60,8 @@ jobs:
     name: Deploy to Production
     permissions:
       contents: read
+      attestations: read
+      packages: read
     needs: [docker-publish, deploy-staging]
     if: |
       !cancelled() &&
