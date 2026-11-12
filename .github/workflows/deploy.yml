@@ -35,6 +35,8 @@ jobs:
     name: Deploy to ${{ inputs.environment }}
     permissions:
       contents: read
+      packages: read
+      attestations: read
     runs-on: ubuntu-latest
     timeout-minutes: 35
     environment:
@@ -42,6 +44,18 @@ jobs:
       url: ${{ inputs.service_url }}
 
     steps:
+      - name: Verify image provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          gh attestation verify \
+            "oci://${IMAGE_NAME,,}@${IMAGE_DIGEST}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/docker-publish.yml" \
+            --source-ref "refs/heads/main"
+
       - name: Trigger Render deployment
         id: deploy
         env:
