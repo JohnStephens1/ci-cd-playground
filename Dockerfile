@@ -35,6 +35,8 @@ RUN groupadd --gid 10001 app \
 
 COPY --from=build --chown=10001:10001 /app/.venv /app/.venv
 
+COPY static/ ./static/
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
