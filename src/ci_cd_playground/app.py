@@ -1,6 +1,7 @@
 """FastAPI application for ci_cd_playground."""
 
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -31,7 +32,18 @@ def create_app() -> FastAPI:
         """Greeting endpoint accepting a path parameter."""
         return {"message": f"Hello, {name}!"}
 
-    application.mount("/", StaticFiles(directory="static", html=True), name="static")
+    if Path("static").is_dir():
+        application.mount(
+            "/",
+            StaticFiles(directory="static", html=True),
+            name="static",
+        )
+
+    else:
+
+        @application.get("/")
+        def read_root() -> dict[str, str]:
+            return {"message": "Hello, world! (No frontend available)"}
 
     return application
 

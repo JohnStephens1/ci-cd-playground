@@ -169,6 +169,7 @@ jobs:
 
       - name: Verify wheel installation and import
         run: |
+          mkdir static
           .venv-wheel/bin/python - <<'PY'
           import ci_cd_playground
 
