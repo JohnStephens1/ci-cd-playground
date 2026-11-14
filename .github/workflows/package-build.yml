@@ -94,17 +94,21 @@ jobs:
           set -euo pipefail
           mkdir -p sbom
 
-          echo "Generating SPDX JSON SBOM for wheel..."
-          syft "$WHEEL_PATH" -o spdx-json=sbom/package-wheel.spdx.json
+          uv venv venv_wheel
+          uv pip install "$WHEEL_PATH" --target venv_wheel
 
-          echo "Generating human-readable SBOM for wheel..."
-          syft "$WHEEL_PATH" -o table=sbom/package-wheel.txt
+          echo "Generating SPDX JSON and human-readable SBOM for wheel..."
+          syft venv_wheel \
+            -o spdx-json=sbom/package-wheel.spdx.json \
+            -o table=sbom/package-wheel.txt
 
-          echo "Generating SPDX JSON SBOM for sdist..."
-          syft "$SDIST_PATH" -o spdx-json=sbom/package-sdist.spdx.json
+          uv venv venv_sdist
+          uv pip install "$SDIST_PATH" --target venv_sdist
 
-          echo "Generating human-readable SBOM for sdist..."
-          syft "$SDIST_PATH" -o table=sbom/package-sdist.txt
+          echo "Generating SPDX JSON and human-readable SBOM for sdist..."
+          syft venv_sdist \
+            -o spdx-json=sbom/package-sdist.spdx.json \
+            -o table=sbom/package-sdist.txt
 
           echo "Generated SBOM files:"
           ls -la sbom/
