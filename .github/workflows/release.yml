@@ -348,7 +348,9 @@ jobs:
 
       - name: Publish to TestPyPI
         run: |
-          uv publish --index testpypi
+          uv publish \
+            --publish-url https://test.pypi.org/legacy/ \
+            --check-url https://test.pypi.org/simple/
 
       - name: Smoke-test installation from TestPyPI
         env:
