@@ -100,46 +100,160 @@ Triggers automatically on pushes to `main` and via manual `workflow_dispatch`:
 3. **Deploy to Staging**: Automatically calls `deploy.yml` with `staging` settings and validates staging health.
 4. **Deploy to Production**: Calls `deploy.yml` with `production` settings. Can be gated with GitHub Environment manual approval rules or targeted selectively via manual dispatch.
 
-### 6. Release & TestPyPI Publishing — [`.github/workflows/release.yml`](.github/workflows/release.yml)
+### 6. Package Build & Provenance (SLSA Level 3) — [`.github/workflows/package-build.yml`](.github/workflows/package-build.yml)
+
+A **trusted reusable builder workflow** (`workflow_call`) that enforces isolation and build platform integrity to meet **SLSA v1.0 Build Level 3**:
+1. **Isolated Build**: Checks out the target commit and builds both distributions (`uv build --no-sources`) strictly once.
+2. **Artifact Identification**: Computes cryptographic SHA-256 digests for both the wheel (`.whl`) and sdist (`.tar.gz`), generating `checksums/SHA256SUMS`.
+3. **Individual SBOM Generation (Syft)**: Scans the actual built distributions independently with Syft to generate:
+   - Machine-readable SPDX 2.3 JSON: `package-wheel.spdx.json` and `package-sdist.spdx.json`
+   - Human-readable summary tables: `package-wheel.txt` and `package-sdist.txt`
+4. **SLSA Build Provenance Attestation**: Generates cryptographically signed SLSA provenance via `actions/attest` backed by Sigstore, bound to both distribution digests and exported to `attestations/package-provenance.intoto.jsonl`.
+5. **Individual SBOM Attestations**: Cryptographically signs each distribution's SBOM with `actions/attest`, binding the wheel SBOM to the wheel digest and the sdist SBOM to the sdist digest (`package-wheel-sbom.attestation.json` and `package-sdist-sbom.attestation.json`).
+6. **Immutable Artifact Preservation**: Uploads distributions, SBOMs, attestations, and checksums as GitHub Actions artifacts for downstream pipeline consumption.
+
+### 7. Release & PyPI/TestPyPI Publishing — [`.github/workflows/release.yml`](.github/workflows/release.yml)
 
 Triggers whenever a version tag matching `v*` (e.g. `v0.1.0`) is pushed to the repository (or via manual `workflow_dispatch`):
 
-1. **CI Validation & Build**: Directly reuses `ci.yml`.
-2. **Tag Release Container**: Calls `docker-publish.yml` with the release tag (e.g. `v0.1.0`).
-3. **Publish to TestPyPI**:
-   - Downloads the pre-built `dist-packages` artifact from CI.
-   - Publishes to TestPyPI using `uv publish --index testpypi`.
-   - Supports both **Trusted Publishing** (OIDC via `id-token: write` and GitHub environment `testpypi`) and **API Token** (via `TESTPYPI_API_TOKEN` secret).
-4. **Create GitHub Release**:
-   - Compares the git tag with the package version declared in `pyproject.toml`.
-   - Downloads the pre-built, verified `dist-packages` artifact from the CI run.
-   - Creates a GitHub Release using `gh release create` with automatically generated release notes and attaches the built packages from `dist/*`.
+1. **Validate Release Reference**: Validates git tag syntax, verifies that the tag cryptographically resolves to the target commit SHA, and ensures the git tag matches `project.version` in `pyproject.toml`.
+2. **Build via Trusted Builder**: Invokes the isolated reusable workflow `package-build.yml` to produce immutable distributions, Syft SBOMs, SLSA Level 3 provenance, and SBOM attestations.
+3. **Test Built Distributions**: Installs the built wheel in an isolated `.venv-wheel` and the built sdist in an isolated `.venv-sdist`, verifying installations and import smoke-tests before promotion.
+4. **Comprehensive Automated Verification**:
+   - Verifies distribution checksums against `SHA256SUMS`.
+   - Verifies SLSA Build Provenance authenticity and subject digests online via GitHub API and offline using the bundled `.intoto.jsonl` file.
+   - Verifies individual SBOM attestations online and offline using `--predicate-type https://spdx.dev/Document/v2.3`.
+   - Validates that the builder signer workflow strictly matches `package-build.yml` (`--signer-workflow`).
+5. **Publish to TestPyPI**:
+   - Publishes verified distributions using Trusted Publishing (OIDC) via `uv publish --index testpypi`.
+   - Performs a smoke-test installation in a clean environment from TestPyPI.
+6. **Publish to PyPI**:
+   - Gated by the `pypi` environment (with optional environment protection / manual approval rules).
+   - Generates PEP 740 digital provenance attestations via `astral-sh/attest-action`.
+   - Publishes verified distributions to PyPI via `uv publish`.
+7. **Create GitHub Release**:
+   - Creates a GitHub Release with release notes and attaches:
+     - `dist/`: Wheel (`.whl`) and source distribution (`.tar.gz`)
+     - `sbom/`: SPDX JSON and readable text SBOMs (`package-wheel.spdx.json`, `package-sdist.spdx.json`, `package-wheel.txt`, `package-sdist.txt`)
+     - `attestations/`: `package-provenance.intoto.jsonl`, `package-wheel-sbom.attestation.json`, `package-sdist-sbom.attestation.json`
+     - `checksums/`: `SHA256SUMS`
 
-#### Configuring TestPyPI Publishing
+#### Configuring PyPI & TestPyPI Trusted Publishing
 
-You can authenticate using either method:
-
-- **Method A: Trusted Publishing (Recommended)**:
-  1. Add a Pending Publisher on [TestPyPI](https://test.pypi.org/manage/account/publishing/) targeting your GitHub repo and workflow (`release.yml`), with environment name `testpypi`.
-  2. Create a GitHub Environment named `testpypi` in repository settings (**Settings > Environments**).
-  3. No secrets needed; authentication happens securely via OIDC.
-
-- **Method B: API Token**:
-  1. Generate an API token on [TestPyPI](https://test.pypi.org/manage/account/token/).
-  2. Add it to your GitHub repository secrets (**Settings > Secrets and variables > Actions**) named `TESTPYPI_API_TOKEN`.
+1. **TestPyPI**:
+   - Add a Pending Publisher on [TestPyPI](https://test.pypi.org/manage/account/publishing/) targeting your GitHub repository and workflow (`release.yml`), with environment name `testpypi`.
+   - Create a GitHub Environment named `testpypi` in repository settings (**Settings > Environments**).
+2. **Production PyPI**:
+   - Add a Publisher on [PyPI](https://pypi.org/manage/account/publishing/) targeting your GitHub repository and workflow (`release.yml`), with environment name `pypi`.
+   - Create a GitHub Environment named `pypi` in repository settings (**Settings > Environments**), optionally configuring required reviewers for manual release sign-off.
 
 #### Creating a Release
 
 ```bash
-# 1. Bump version in pyproject.toml (e.g. 0.1.0)
-uv version 0.1.0
+# 1. Bump version in pyproject.toml (e.g. 0.1.15)
+uv version 0.1.15
 
 # 2. Commit and tag
-git commit -am "chore: release v0.1.0"
-git tag v0.1.0
+git commit -am "chore: release v0.1.15"
+git tag v0.1.15
 
 # 3. Push tag to GitHub to trigger the release workflow
-git push origin v0.1.0
+git push origin v0.1.15
+```
+
+## Consumer Verification Guide
+
+Consumers can independently verify the authenticity, integrity, SLSA Build Level 3 provenance, and SBOM attestations of released artifacts without trusting the build workflow's claims.
+
+### 1. Verify SHA-256 Checksums
+
+Download the release assets into a local directory and verify the distribution digests:
+
+```bash
+sha256sum -c SHA256SUMS
+```
+
+### 2. Verify SLSA Build Level 3 Provenance
+
+Using the official [GitHub CLI](https://cli.github.com/) (`gh` v2.97.0+):
+
+**Online Verification (via Sigstore transparency log):**
+
+```bash
+# Verify wheel provenance
+gh attestation verify ci_cd_playground-0.1.15-py3-none-any.whl \
+  --repo <OWNER>/ci-cd-playground \
+  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml
+
+# Verify sdist provenance
+gh attestation verify ci_cd_playground-0.1.15.tar.gz \
+  --repo <OWNER>/ci-cd-playground \
+  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml
+```
+
+**Offline Verification (using the release attestation bundle):**
+
+```bash
+gh attestation verify ci_cd_playground-0.1.15-py3-none-any.whl \
+  --bundle package-provenance.intoto.jsonl \
+  --repo <OWNER>/ci-cd-playground \
+  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml
+
+gh attestation verify ci_cd_playground-0.1.15.tar.gz \
+  --bundle package-provenance.intoto.jsonl \
+  --repo <OWNER>/ci-cd-playground \
+  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml
+```
+
+### 3. Verify Individual SBOM Attestations
+
+Verify that the SBOMs were cryptographically signed and bound to the exact distribution files:
+
+**Wheel SBOM Attestation:**
+
+```bash
+# Online
+gh attestation verify ci_cd_playground-0.1.15-py3-none-any.whl \
+  --repo <OWNER>/ci-cd-playground \
+  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml \
+  --predicate-type https://spdx.dev/Document/v2.3
+
+# Offline
+gh attestation verify ci_cd_playground-0.1.15-py3-none-any.whl \
+  --bundle package-wheel-sbom.attestation.json \
+  --repo <OWNER>/ci-cd-playground \
+  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml \
+  --predicate-type https://spdx.dev/Document/v2.3
+```
+
+**Sdist SBOM Attestation:**
+
+```bash
+# Online
+gh attestation verify ci_cd_playground-0.1.15.tar.gz \
+  --repo <OWNER>/ci-cd-playground \
+  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml \
+  --predicate-type https://spdx.dev/Document/v2.3
+
+# Offline
+gh attestation verify ci_cd_playground-0.1.15.tar.gz \
+  --bundle package-sdist-sbom.attestation.json \
+  --repo <OWNER>/ci-cd-playground \
+  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml \
+  --predicate-type https://spdx.dev/Document/v2.3
+```
+
+### 4. Inspect Software Bill of Materials (SBOM)
+
+Inspect the Syft-generated human-readable summary or machine-readable SPDX JSON:
+
+```bash
+# Human-readable table summary
+cat package-wheel.txt
+cat package-sdist.txt
+
+# Query packages in SPDX JSON with jq
+jq '.packages[] | {name: .name, versionInfo: .versionInfo}' package-wheel.spdx.json
 ```
 
 ## Project Structure
@@ -153,7 +267,8 @@ ci-cd-playground/
 │       ├── container-security.yml  # Container build & Trivy scan on PRs
 │       ├── deploy.yml              # Reusable Render deployment workflow
 │       ├── docker-publish.yml      # Reusable Docker build, test & GHCR publish
-│       └── release.yml             # Release workflow (CI, release container, TestPyPI & GitHub)
+│       ├── package-build.yml       # Reusable SLSA Level 3 builder (uv build, Syft SBOMs, attestations)
+│       └── release.yml             # Release pipeline (validation, build, test, verify, TestPyPI, PyPI, GitHub)
 ├── src/
 │   └── ci_cd_playground/
 │       ├── __init__.py             # Package entrypoint and sample code

@@ -127,128 +127,204 @@ jobs:
 
           echo "Validated release: $tag ($sha)"
 
-  validate-cd:
-    name: Find and validate CD artifact
+  build:
+    name: Build & Attest Package (SLSA Level 3)
     needs: [validate-release-reference]
     permissions:
-      actions: read
       contents: read
-    runs-on: ubuntu-latest
+      id-token: write
+      attestations: write
+    uses: $/.github/workflows/package-build.yml
+    with:
+      ref: ${{ needs.validate-release-reference.outputs.sha }}
 
-    outputs:
-      run_id: ${{ steps.find-artifact.outputs.run_id }}
+  test-distributions:
+    name: Test built distributions
+    runs-on: ubuntu-latest
+    needs: [build]
+    permissions:
+      contents: read
 
     steps:
-      - name: Find and validate CD artifact
-        id: find-artifact
-        shell: bash
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: false
+          python-version: "3.13"
+
+      - name: Download built distributions
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: dist-packages
+          path: dist/
+
+      - name: Create isolated wheel test environment
+        run: uv venv .venv-wheel
+
+      - name: Install built wheel
+        run: uv pip install --python .venv-wheel/bin/python dist/*.whl
+
+      - name: Verify wheel installation and import
+        run: |
+          .venv-wheel/bin/python - <<'PY'
+          import ci_cd_playground
+          print('Wheel installation successful:', ci_cd_playground.hello())
+          PY
+
+      - name: Create isolated sdist test environment
+        run: uv venv .venv-sdist
+
+      - name: Install built source distribution
+        run: uv pip install --python .venv-sdist/bin/python dist/*.tar.gz
+
+      - name: Verify sdist installation and import
+        run: |
+          .venv-sdist/bin/python - <<'PY'
+          import ci_cd_playground
+          print('Sdist installation successful:', ci_cd_playground.hello())
+          PY
+
+  verify:
+    name: Verify artifacts, provenance, and SBOM attestations
+    runs-on: ubuntu-latest
+    needs: [validate-release-reference, build, test-distributions]
+    permissions:
+      contents: read
+      attestations: read
+
+    steps:
+      - name: Download built distributions
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: dist-packages
+          path: dist/
+
+      - name: Download SBOM packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: sbom-packages
+          path: sbom/
+
+      - name: Download attestation packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: attestation-packages
+          path: attestations/
+
+      - name: Download checksum packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: checksum-packages
+          path: checksums/
+
+      - name: Verify SHA-256 checksums and artifact identity
         env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ needs.validate-release-reference.outputs.sha }}
-          TAG: ${{ needs.validate-release-reference.outputs.tag }}
+          EXPECTED_WHEEL_NAME: ${{ needs.build.outputs.wheel_name }}
+          EXPECTED_WHEEL_DIGEST: ${{ needs.build.outputs.wheel_digest }}
+          EXPECTED_SDIST_NAME: ${{ needs.build.outputs.sdist_name }}
+          EXPECTED_SDIST_DIGEST: ${{ needs.build.outputs.sdist_digest }}
         run: |
           set -euo pipefail
 
-          echo "Looking for CD run for $SHA ($TAG)"
+          echo "Verifying SHA256SUMS file..."
+          (cd dist && sha256sum -c ../checksums/SHA256SUMS)
 
-          # Return the newest CD run for the target SHA.
-          find_latest_run() {
-            gh api --paginate \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/cd.yml/runs?head_sha=${SHA}&per_page=100" |
-              jq -s '
-                [.[].workflow_runs[]] |
-                sort_by(.created_at) |
-                last // empty
-              '
-          }
+          echo "Verifying wheel identity..."
+          actual_wheel_digest="sha256:$(sha256sum "dist/${EXPECTED_WHEEL_NAME}" | awk '{print $1}')"
+          if [[ "$actual_wheel_digest" != "$EXPECTED_WHEEL_DIGEST" ]]; then
+            echo "::error::Wheel digest mismatch: expected $EXPECTED_WHEEL_DIGEST, got $actual_wheel_digest"
+            exit 1
+          fi
 
-          # 1. Find the CD run
-          run=""
+          echo "Verifying sdist identity..."
+          actual_sdist_digest="sha256:$(sha256sum "dist/${EXPECTED_SDIST_NAME}" | awk '{print $1}')"
+          if [[ "$actual_sdist_digest" != "$EXPECTED_SDIST_DIGEST" ]]; then
+            echo "::error::Sdist digest mismatch: expected $EXPECTED_SDIST_DIGEST, got $actual_sdist_digest"
+            exit 1
+          fi
 
-          for attempt in {1..10}; do
-            run="$(find_latest_run)"
+          echo "Artifact integrity and identity verified successfully."
 
-            if [[ -n "$run" ]]; then
-              break
-            fi
+      - name: Verify provenance and SBOM attestations (Online & Offline)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WHEEL_NAME: ${{ needs.build.outputs.wheel_name }}
+          SDIST_NAME: ${{ needs.build.outputs.sdist_name }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/package-build.yml
+        run: |
+          set -euo pipefail
 
-            echo "No matching CD run found (attempt $attempt/10)"
-            sleep 6
+          echo "1. Verifying SLSA build provenance via GitHub API..."
+          gh attestation verify "dist/${WHEEL_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${SIGNER_WORKFLOW}"
+
+          gh attestation verify "dist/${SDIST_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${SIGNER_WORKFLOW}"
+
+          echo "2. Verifying individual SBOM attestations via GitHub API..."
+          gh attestation verify "dist/${WHEEL_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${SIGNER_WORKFLOW}" \
+            --predicate-type https://spdx.dev/Document/v2.3
+
+          gh attestation verify "dist/${SDIST_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${SIGNER_WORKFLOW}" \
+            --predicate-type https://spdx.dev/Document/v2.3
+
+          echo "3. Verifying offline provenance bundles..."
+          gh attestation verify "dist/${WHEEL_NAME}" \
+            --bundle attestations/package-provenance.intoto.jsonl \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${SIGNER_WORKFLOW}"
+
+          gh attestation verify "dist/${SDIST_NAME}" \
+            --bundle attestations/package-provenance.intoto.jsonl \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${SIGNER_WORKFLOW}"
+
+          echo "4. Verifying offline individual SBOM attestation bundles..."
+          gh attestation verify "dist/${WHEEL_NAME}" \
+            --bundle attestations/package-wheel-sbom.attestation.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${SIGNER_WORKFLOW}" \
+            --predicate-type https://spdx.dev/Document/v2.3
+
+          gh attestation verify "dist/${SDIST_NAME}" \
+            --bundle attestations/package-sdist-sbom.attestation.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${SIGNER_WORKFLOW}" \
+            --predicate-type https://spdx.dev/Document/v2.3
+
+          echo "All cryptographic attestations and signatures verified successfully."
+
+      - name: Validate SBOM contents and distribution association
+        run: |
+          set -euo pipefail
+
+          echo "Validating SPDX JSON schemas and package association..."
+          for sbom in sbom/package-wheel.spdx.json sbom/package-sdist.spdx.json; do
+            [[ -s "$sbom" ]] || {
+              echo "::error::SBOM $sbom is empty or missing"
+              exit 1
+            }
+            jq -e '.spdxVersion and .packages and .name' "$sbom" > /dev/null
           done
 
-          [[ -n "$run" ]] || {
-            echo "::error::No matching CD run found"
-            exit 1
-          }
-
-          # 2. Wait for completion, re-evaluating the latest run
-          for attempt in {1..60}; do
-            latest="$(find_latest_run)"
-
-            if [[ -z "$latest" ]]; then
-              echo "::error::Previously discovered CD run disappeared"
+          for readable in sbom/package-wheel.txt sbom/package-sdist.txt; do
+            [[ -s "$readable" ]] || {
+              echo "::error::Human-readable SBOM $readable is empty or missing"
               exit 1
-            fi
-
-            run_id="$(jq -r '.id' <<< "$latest")"
-            status="$(jq -r '.status' <<< "$latest")"
-            conclusion="$(jq -r '.conclusion // empty' <<< "$latest")"
-
-            echo "CD run $run_id: $status ($conclusion)"
-
-            if [[ "$status" == "completed" ]]; then
-              [[ "$conclusion" == "success" ]] || {
-                echo "::error::CD run $run_id failed: $conclusion"
-                exit 1
-              }
-              break
-            fi
-
-            case "$status" in
-              queued|waiting|in_progress|requested|pending)
-                ;;
-              *)
-                echo "::error::Unexpected CD run status: $status"
-                exit 1
-                ;;
-            esac
-
-            if (( attempt == 60 )); then
-              echo "::error::Timed out waiting for CD run"
-              exit 1
-            fi
-
-            sleep 10
+            }
           done
 
-          # 3. Validate the artifact
-          artifacts="$(
-            gh api --paginate \
-              "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" |
-            jq -s '[.[].artifacts[] | select(.name == "dist-packages")]'
-          )"
-
-          count="$(jq 'length' <<< "$artifacts")"
-
-          [[ "$count" -eq 1 ]] || {
-            echo "::error::Expected exactly one dist-packages artifact, found $count"
-            exit 1
-          }
-
-          expired="$(jq -r '.[0].expired' <<< "$artifacts")"
-
-          [[ "$expired" == "false" ]] || {
-            echo "::error::dist-packages artifact has expired"
-            exit 1
-          }
-
-          # 4. Publish only after all validation succeeds
-          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-          echo "Validated CD run: $run_id"
+          echo "SBOM files validated."
 
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: [validate-release-reference, validate-cd]
+    needs: [validate-release-reference, build, test-distributions, verify]
     permissions:
       contents: read
       id-token: write  # Required for Trusted Publishing (OIDC)
@@ -258,38 +334,92 @@ jobs:
       url: https://test.pypi.org/
 
     steps:
-      - name: Checkout target commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ needs.validate-release-reference.outputs.sha }}
-          fetch-depth: 0
-          fetch-tags: true
-
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           enable-cache: false
           python-version: "3.13"
 
-      - name: Download built packages from CI
+      - name: Download verified distributions
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: dist-packages
-          run-id: ${{ needs.validate-cd.outputs.run_id }}
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
           path: dist/
 
       - name: Publish to TestPyPI
         run: |
           uv publish --index testpypi
 
+      - name: Smoke-test installation from TestPyPI
+        env:
+          TAG: ${{ needs.validate-release-reference.outputs.tag }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          uv venv .venv-smoke
+
+          # Wait for TestPyPI index to propagate and install package
+          installed=0
+          for attempt in {1..10}; do
+            if uv pip install \
+              --python .venv-smoke/bin/python \
+              --index-url https://test.pypi.org/simple/ \
+              --extra-index-url https://pypi.org/simple/ \
+              "ci-cd-playground==${VERSION}"; then
+              installed=1
+              break
+            fi
+            echo "Waiting for TestPyPI index propagation (attempt $attempt/10)..."
+            sleep 6
+          done
+
+          if [[ "$installed" -ne 1 ]]; then
+            echo "::error::Failed to install package from TestPyPI"
+            exit 1
+          fi
+
+          .venv-smoke/bin/python - <<'PY'
+          import ci_cd_playground
+          print("TestPyPI smoke-test successful:", ci_cd_playground.hello())
+          PY
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [validate-release-reference, build, test-distributions, verify, publish-testpypi]
+    permissions:
+      contents: read
+      id-token: write  # Required for Trusted Publishing (OIDC)
+      attestations: write
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/ci-cd-playground/
+
+    steps:
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: false
+          python-version: "3.13"
+
+      - name: Download verified distributions
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: dist-packages
+          path: dist/
+
+      - name: Generate PEP 740 attestations
+        uses: astral-sh/attest-action@39b6ce43875c196a579e31635b11aa2a2036384a  # v0.0.7
+
+      - name: Publish to PyPI
+        run: |
+          uv publish
+
   release:
     name: Create GitHub Release
     permissions:
       contents: write
-    needs: [validate-release-reference, validate-cd]
+    needs: [validate-release-reference, build, test-distributions, verify, publish-pypi]
     runs-on: ubuntu-latest
 
     steps:
@@ -301,14 +431,29 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Download built packages from CI
+      - name: Download distribution packages
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: dist-packages
-          run-id: ${{ needs.validate-cd.outputs.run_id }}
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
           path: dist/
+
+      - name: Download SBOM packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: sbom-packages
+          path: sbom/
+
+      - name: Download attestation packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: attestation-packages
+          path: attestations/
+
+      - name: Download checksum packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: checksum-packages
+          path: checksums/
 
       - name: Create GitHub Release
         env:
@@ -317,5 +462,8 @@ jobs:
         run: |
           gh release create "$TAG" \
             dist/* \
+            sbom/* \
+            attestations/* \
+            checksums/* \
             --title "Release $TAG" \
             --generate-notes

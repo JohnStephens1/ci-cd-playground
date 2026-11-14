@@ -1,0 +1,185 @@
+name: package-build
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Target Git ref or commit SHA to build"
+        required: false
+        type: string
+        default: ""
+    outputs:
+      wheel_name:
+        description: "Built wheel filename"
+        value: ${{ jobs.build.outputs.wheel_name }}
+      wheel_digest:
+        description: "SHA-256 digest of the built wheel"
+        value: ${{ jobs.build.outputs.wheel_digest }}
+      sdist_name:
+        description: "Built sdist filename"
+        value: ${{ jobs.build.outputs.sdist_name }}
+      sdist_digest:
+        description: "SHA-256 digest of the built sdist"
+        value: ${{ jobs.build.outputs.sdist_digest }}
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build, SBOM, and Attest (SLSA Level 3)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    outputs:
+      wheel_name: ${{ steps.build.outputs.wheel_name }}
+      wheel_digest: ${{ steps.build.outputs.wheel_digest }}
+      sdist_name: ${{ steps.build.outputs.sdist_name }}
+      sdist_digest: ${{ steps.build.outputs.sdist_digest }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: false
+          python-version: "3.13"
+
+      - name: Build distribution packages
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv build --no-sources
+
+          wheel_path="$(ls dist/*.whl)"
+          sdist_path="$(ls dist/*.tar.gz)"
+
+          wheel_name="$(basename "$wheel_path")"
+          sdist_name="$(basename "$sdist_path")"
+
+          mkdir -p checksums
+          (cd dist && sha256sum "$wheel_name" "$sdist_name") > checksums/SHA256SUMS
+
+          wheel_digest="$(sha256sum "$wheel_path" | awk '{print $1}')"
+          sdist_digest="$(sha256sum "$sdist_path" | awk '{print $1}')"
+
+          {
+            echo "wheel_path=$wheel_path"
+            echo "sdist_path=$sdist_path"
+            echo "wheel_name=$wheel_name"
+            echo "sdist_name=$sdist_name"
+            echo "wheel_digest=sha256:$wheel_digest"
+            echo "sdist_digest=sha256:$sdist_digest"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Built distribution artifacts:"
+          cat checksums/SHA256SUMS
+
+      - name: Setup Syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
+
+      - name: Generate individual SBOMs with Syft
+        env:
+          WHEEL_PATH: ${{ steps.build.outputs.wheel_path }}
+          SDIST_PATH: ${{ steps.build.outputs.sdist_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p sbom
+
+          echo "Generating SPDX JSON SBOM for wheel..."
+          syft "$WHEEL_PATH" -o spdx-json=sbom/package-wheel.spdx.json
+
+          echo "Generating human-readable SBOM for wheel..."
+          syft "$WHEEL_PATH" -o table=sbom/package-wheel.txt
+
+          echo "Generating SPDX JSON SBOM for sdist..."
+          syft "$SDIST_PATH" -o spdx-json=sbom/package-sdist.spdx.json
+
+          echo "Generating human-readable SBOM for sdist..."
+          syft "$SDIST_PATH" -o table=sbom/package-sdist.txt
+
+          echo "Generated SBOM files:"
+          ls -la sbom/
+
+      - name: Generate SLSA provenance attestation
+        id: attest-provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
+        with:
+          subject-path: 'dist/*'
+
+      - name: Save provenance attestation bundle
+        env:
+          BUNDLE_PATH: ${{ steps.attest-provenance.outputs.bundle-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p attestations
+          cp "$BUNDLE_PATH" attestations/package-provenance.intoto.jsonl
+
+      - name: Generate wheel SBOM attestation
+        id: attest-wheel-sbom
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
+        with:
+          subject-path: ${{ steps.build.outputs.wheel_path }}
+          sbom-path: sbom/package-wheel.spdx.json
+
+      - name: Save wheel SBOM attestation bundle
+        env:
+          BUNDLE_PATH: ${{ steps.attest-wheel-sbom.outputs.bundle-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p attestations
+          cp "$BUNDLE_PATH" attestations/package-wheel-sbom.attestation.json
+
+      - name: Generate sdist SBOM attestation
+        id: attest-sdist-sbom
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
+        with:
+          subject-path: ${{ steps.build.outputs.sdist_path }}
+          sbom-path: sbom/package-sdist.spdx.json
+
+      - name: Save sdist SBOM attestation bundle
+        env:
+          BUNDLE_PATH: ${{ steps.attest-sdist-sbom.outputs.bundle-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p attestations
+          cp "$BUNDLE_PATH" attestations/package-sdist-sbom.attestation.json
+
+      - name: Upload distribution packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: dist-packages
+          path: dist/
+          if-no-files-found: error
+
+      - name: Upload SBOM packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: sbom-packages
+          path: sbom/
+          if-no-files-found: error
+
+      - name: Upload attestation packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: attestation-packages
+          path: attestations/
+          if-no-files-found: error
+
+      - name: Upload checksum packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: checksum-packages
+          path: checksums/
+          if-no-files-found: error
