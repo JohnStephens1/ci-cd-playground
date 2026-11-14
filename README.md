@@ -147,20 +147,6 @@ Triggers whenever a version tag matching `v*` (e.g. `v0.1.0`) is pushed to the r
    - Add a Publisher on [PyPI](https://pypi.org/manage/account/publishing/) targeting your GitHub repository and workflow (`release.yml`), with environment name `pypi`.
    - Create a GitHub Environment named `pypi` in repository settings (**Settings > Environments**), optionally configuring required reviewers for manual release sign-off.
 
-#### Creating a Release
-
-```bash
-# 1. Bump version in pyproject.toml (e.g. 0.1.15)
-uv version 0.1.15
-
-# 2. Commit and tag
-git commit -am "chore: release v0.1.15"
-git tag v0.1.15
-
-# 3. Push tag to GitHub to trigger the release workflow
-git push origin v0.1.15
-```
-
 ## Consumer Verification Guide
 
 Consumers can independently verify the authenticity, integrity, SLSA Build Level 3 provenance, and SBOM attestations of released artifacts without trusting the build workflow's claims.
@@ -181,28 +167,28 @@ Using the official [GitHub CLI](https://cli.github.com/) (`gh` v2.97.0+):
 
 ```bash
 # Verify wheel provenance
-gh attestation verify ci_cd_playground-0.1.15-py3-none-any.whl \
-  --repo <OWNER>/ci-cd-playground \
-  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml
+gh attestation verify ci_cd_playground-0.1.16-py3-none-any.whl \
+  --repo JohnStephens1/ci-cd-playground \
+  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml
 
 # Verify sdist provenance
-gh attestation verify ci_cd_playground-0.1.15.tar.gz \
-  --repo <OWNER>/ci-cd-playground \
-  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml
+gh attestation verify ci_cd_playground-0.1.16.tar.gz \
+  --repo JohnStephens1/ci-cd-playground \
+  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml
 ```
 
 **Offline Verification (using the release attestation bundle):**
 
 ```bash
-gh attestation verify ci_cd_playground-0.1.15-py3-none-any.whl \
+gh attestation verify ci_cd_playground-0.1.16-py3-none-any.whl \
   --bundle package-provenance.intoto.jsonl \
-  --repo <OWNER>/ci-cd-playground \
-  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml
+  --repo JohnStephens1/ci-cd-playground \
+  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml
 
-gh attestation verify ci_cd_playground-0.1.15.tar.gz \
+gh attestation verify ci_cd_playground-0.1.16.tar.gz \
   --bundle package-provenance.intoto.jsonl \
-  --repo <OWNER>/ci-cd-playground \
-  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml
+  --repo JohnStephens1/ci-cd-playground \
+  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml
 ```
 
 ### 3. Verify Individual SBOM Attestations
@@ -213,16 +199,16 @@ Verify that the SBOMs were cryptographically signed and bound to the exact distr
 
 ```bash
 # Online
-gh attestation verify ci_cd_playground-0.1.15-py3-none-any.whl \
-  --repo <OWNER>/ci-cd-playground \
-  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml \
+gh attestation verify ci_cd_playground-0.1.16-py3-none-any.whl \
+  --repo JohnStephens1/ci-cd-playground \
+  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml \
   --predicate-type https://spdx.dev/Document/v2.3
 
 # Offline
-gh attestation verify ci_cd_playground-0.1.15-py3-none-any.whl \
+gh attestation verify ci_cd_playground-0.1.16-py3-none-any.whl \
   --bundle package-wheel-sbom.attestation.json \
-  --repo <OWNER>/ci-cd-playground \
-  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml \
+  --repo JohnStephens1/ci-cd-playground \
+  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
@@ -230,16 +216,16 @@ gh attestation verify ci_cd_playground-0.1.15-py3-none-any.whl \
 
 ```bash
 # Online
-gh attestation verify ci_cd_playground-0.1.15.tar.gz \
-  --repo <OWNER>/ci-cd-playground \
-  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml \
+gh attestation verify ci_cd_playground-0.1.16.tar.gz \
+  --repo JohnStephens1/ci-cd-playground \
+  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml \
   --predicate-type https://spdx.dev/Document/v2.3
 
 # Offline
-gh attestation verify ci_cd_playground-0.1.15.tar.gz \
+gh attestation verify ci_cd_playground-0.1.16.tar.gz \
   --bundle package-sdist-sbom.attestation.json \
-  --repo <OWNER>/ci-cd-playground \
-  --signer-workflow <OWNER>/ci-cd-playground/.github/workflows/package-build.yml \
+  --repo JohnStephens1/ci-cd-playground \
+  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
