@@ -1,15 +1,11 @@
-FROM python:3.13-slim-trixie AS build
-
-# apply OS security updates
-RUN apt-get update \
-    && apt-get install -y --only-upgrade apt zlib1g \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.13.18-slim-trixie AS build
 
 WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.6 /uv /uvx /bin/
 
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 COPY pyproject.toml uv.lock README.md ./
 
@@ -20,7 +16,7 @@ COPY src/ ./src/
 RUN uv sync --locked --no-dev --no-editable
 
 
-FROM python:3.13-slim-trixie AS runtime
+FROM python:3.13.18-slim-trixie AS runtime
 
 # apply OS security updates
 RUN apt-get update \
@@ -29,17 +25,29 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY --from=build /app/.venv /app/.venv
+RUN groupadd --gid 10001 app \
+    && useradd --uid 10001 \
+       --gid 10001 \
+       --no-create-home \
+       --home-dir /nonexistent \
+       --shell /usr/sbin/nologin \
+       app
 
-ENV PYTHONUNBUFFERED=1
-ENV PATH="/app/.venv/bin:$PATH"
+COPY --from=build --chown=10001:10001 /app/.venv /app/.venv
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 
 ARG APP_VERSION=unknown
 ARG GIT_SHA=unknown
 
-ENV APP_VERSION=${APP_VERSION}
-ENV GIT_SHA=${GIT_SHA}
+ENV APP_VERSION=${APP_VERSION} \
+    GIT_SHA=${GIT_SHA}
 
-CMD ["sh", "-c", "uvicorn ci_cd_playground.app:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Run as non-root.
+USER 10001:10001
+
+CMD ["sh", "-c", "exec uvicorn ci_cd_playground.app:app --host 0.0.0.0 --port ${PORT:-8000}"]
