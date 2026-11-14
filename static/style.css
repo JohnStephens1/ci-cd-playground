@@ -1,0 +1,6 @@
+#sketch-container {
+    width: min(100vw, calc(100svh * 4 / 3));
+    aspect-ratio: 4 / 3;
+
+    min-width: 320px;
+}

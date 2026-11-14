@@ -13,13 +13,6 @@ def client() -> TestClient:
     return TestClient(app)
 
 
-def test_read_root(client: TestClient) -> None:
-    """Test the root endpoint returns the default greeting."""
-    response = client.get("/")
-    assert response.status_code == 200
-    assert response.json() == {"message": "Hello, world!"}
-
-
 def test_health_check(client: TestClient) -> None:
     """Test the health check endpoint returns status ok."""
     response = client.get("/health")
