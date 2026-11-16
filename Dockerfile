@@ -1,4 +1,4 @@
-FROM python:3.13.18-slim-trixie AS build
+FROM python:3.15.0-slim-trixie AS build
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ COPY src/ ./src/
 RUN uv sync --locked --no-dev --no-editable
 
 
-FROM python:3.13.18-slim-trixie AS runtime
+FROM python:3.15.0-slim-trixie AS runtime
 
 # apply OS security updates
 RUN apt-get update \
