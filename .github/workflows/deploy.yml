@@ -21,6 +21,9 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      RENDER_API_KEY:
+        required: true
   workflow_dispatch:
     inputs:
       environment:
@@ -331,3 +334,5 @@ jobs:
     with:
       deploy_id: ${{ needs.deploy.outputs.previous_deploy_id }}
       environment: ${{ inputs.environment }}
+    secrets:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
