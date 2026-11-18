@@ -90,7 +90,6 @@ jobs:
           echo "Rollback timed out."
           exit 1
 
-
       - name: Health check
         env:
           SERVICE_URL: ${{ inputs.service_url }}
