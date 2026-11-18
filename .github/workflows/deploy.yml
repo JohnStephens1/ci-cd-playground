@@ -7,8 +7,24 @@ on:
         description: Target deployment environment (staging or production)
         required: true
         type: string
-      service_url:
-        description: Service URL to verify health and version
+      image_digest:
+        description: Docker image digest to deploy
+        required: true
+        type: string
+      expected_commit:
+        description: Expected git commit SHA
+        required: false
+        type: string
+        default: ""
+      force_health_check_failure:
+        description: 'Simulate health-check failure to test rollback'
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target deployment environment (staging or production)
         required: true
         type: string
       image_digest:
@@ -20,13 +36,11 @@ on:
         required: false
         type: string
         default: ""
-    secrets:
-      RENDER_API_KEY:
-        description: Render API authorization key
-        required: true
-      RENDER_SERVICE_ID:
-        description: Render Service ID
-        required: true
+      force_health_check_failure:
+        description: 'Simulate health-check failure to test rollback'
+        required: false
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -45,7 +59,6 @@ jobs:
     timeout-minutes: 35
     environment:
       name: ${{ inputs.environment }}
-      url: ${{ inputs.service_url }}
 
     outputs:
       deployment_live: ${{ steps.deploying.outputs.deployment_live }}
@@ -221,10 +234,17 @@ jobs:
         id: check
         shell: bash
         env:
-          SERVICE_URL: ${{ inputs.service_url }}
+          SERVICE_URL: ${{ vars.RENDER_SERVICE_URL }}
           EXPECTED_SHA: ${{ inputs.expected_commit || github.sha }}
+          FORCE_HEALTH_CHECK_FAILURE: ${{ inputs.force_health_check_failure }}
         run: |
           set -euo pipefail
+
+          # Temporary rollback testing hook
+          if [[ "${FORCE_HEALTH_CHECK_FAILURE:-false}" == "true" ]]; then
+              echo "Simulating health-check failure"
+              exit 1
+          fi
 
           SERVICE_URL="${SERVICE_URL%/}"
 
@@ -299,8 +319,5 @@ jobs:
       needs.deploy.outputs.previous_deploy_id != ''
     uses: $/.github/workflows/rollback.yml
     with:
-      service_url: ${{ inputs.service_url }}
       deploy_id: ${{ needs.deploy.outputs.previous_deploy_id }}
-    secrets:
-      RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
-      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      environment: ${{ inputs.environment }}
