@@ -358,14 +358,17 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${TAG#v}"
+          PYTHON=".venv-smoke/bin/python"
+
           uv venv .venv-smoke
 
-          # Wait for TestPyPI index to propagate and install package
+          # 1. Install our exact TestPyPI release, without dependencies
           installed=0
           for attempt in {1..20}; do
             if uv pip install \
-              --python .venv-smoke/bin/python \
+              --python "$PYTHON" \
               --index-url https://test.pypi.org/simple/ \
+              --no-deps \
               "ci-cd-playground==${VERSION}"; then
               installed=1
               break
@@ -379,9 +382,41 @@ jobs:
             exit 1
           fi
 
-          .venv-smoke/bin/python - <<'PY'
+          # 2. Extract dependencies from the installed distribution metadata
+          "$PYTHON" - <<'PY'
+          from importlib.metadata import distribution
+          from pathlib import Path
+
+          dist = distribution("ci-cd-playground")
+          requirements = dist.metadata.get_all("Requires-Dist") or []
+
+          Path("requirements-smoke.txt").write_text(
+            "\n".join(requirements) + "\n"
+          )
+
+          print("Dependencies declared by TestPyPI artifact:")
+          for requirement in requirements:
+            print(f"  {requirement}")
+          PY
+
+          # 3. Install dependencies from regular PyPI
+          if [ -s requirements-smoke.txt ]; then
+          uv pip install \
+            --python "$PYTHON" \
+            --index-url https://pypi.org/simple/ \
+            -r requirements-smoke.txt
+          fi
+
+          # 4. Verify the installation
+          uv pip check --python "$PYTHON"
+
+          "$PYTHON" - <<'PY'
           import ci_cd_playground
-          print("TestPyPI smoke-test successful:", ci_cd_playground.hello())
+
+          print(
+            'Wheel installation successful:',
+            ci_cd_playground.hello()
+          )
           PY
 
   publish-pypi:
