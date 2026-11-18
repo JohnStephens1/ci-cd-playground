@@ -43,8 +43,8 @@ jobs:
       - name: Roll back ${{ inputs.environment }}
         env:
           DEPLOY_ID: ${{ inputs.deploy_id }}
-          SERVICE_URL: ${{ env.RENDER_SERVICE_URL }}
-          SERVICE_ID: ${{ env.RENDER_SERVICE_ID }}
+          SERVICE_URL: ${{ vars.RENDER_SERVICE_URL }}
+          SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
           set -euo pipefail
@@ -106,7 +106,7 @@ jobs:
 
       - name: Health check
         env:
-          SERVICE_URL: ${{ env.RENDER_SERVICE_URL }}
+          SERVICE_URL: ${{ vars.RENDER_SERVICE_URL }}
         run: |
           set -o pipefail
 
