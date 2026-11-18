@@ -51,7 +51,6 @@ jobs:
       environment: staging
       image_digest: ${{ needs.docker-publish.outputs.image_digest }}
       expected_commit: ${{ github.sha }}
-    secrets: inherit
 
   deploy-production:
     name: Deploy to Production
@@ -70,4 +69,3 @@ jobs:
       environment: production
       image_digest: ${{ needs.docker-publish.outputs.image_digest }}
       expected_commit: ${{ github.sha }}
-    secrets: inherit
