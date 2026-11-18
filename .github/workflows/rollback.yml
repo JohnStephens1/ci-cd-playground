@@ -18,7 +18,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: rollback
+  group: rollback-${{ inputs.service_url }}
   cancel-in-progress: false
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
         env:
           SERVICE_URL: ${{ inputs.service_url }}
           DEPLOY_ID: ${{ inputs.deploy_id }}
-          SERVICE_ID: ${{ secrets.service_id }}
+          SERVICE_ID: ${{ secrets.SERVICE_ID }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
           set -euo pipefail
@@ -39,40 +39,47 @@ jobs:
 
           request() {
             curl --fail-with-body --silent --show-error \
-              -H "Authorization: Bearer $RENDER_API_KEY" \
+              --connect-timeout 10 \
+              --max-time 30 \
+              -H "Authorization: Bearer ${RENDER_API_KEY}" \
               -H "Content-Type: application/json" \
               "$@"
           }
 
-          echo "Rolling back to $DEPLOY_ID"
+          echo "Rolling back to ${DEPLOY_ID}"
 
           RESPONSE=$(request -X POST \
-            "$API/services/$SERVICE_ID/rollback" \
-            -d "{\"deployId\":\"$DEPLOY_ID\"}")
+            "${API}/services/${SERVICE_ID}/rollback" \
+            -d "$(jq -n --arg deployId "${DEPLOY_ID}" \
+              '{deployId: $deployId}')")
 
-          ROLLBACK_ID=$(echo "$RESPONSE" | jq -r '.id')
+          ROLLBACK_ID=$(printf '%s' "$RESPONSE" | jq -r '.id')
 
-          if [ -z "$ROLLBACK_ID" ] || [ "$ROLLBACK_ID" = "null" ]; then
+          if [[ -z "$ROLLBACK_ID" || "$ROLLBACK_ID" == "null" ]]; then
             echo "Could not obtain rollback deployment ID."
             exit 1
           fi
 
-          echo "Rollback deployment: $ROLLBACK_ID"
+          echo "Rollback deployment: ${ROLLBACK_ID}"
 
-          for _ in $(seq 1 60); do
+          for ((i = 0; i < 60; i++)); do
             DEPLOY=$(request \
-              "$API/services/$SERVICE_ID/deploys/$ROLLBACK_ID")
+              "${API}/services/${SERVICE_ID}/deploys/${ROLLBACK_ID}")
 
-            STATUS=$(echo "$DEPLOY" | jq -r '.status')
+            STATUS=$(printf '%s' "$DEPLOY" | jq -r '.status')
 
-            echo "Rollback status: $STATUS"
+            echo "Rollback status: ${STATUS}"
 
             case "$STATUS" in
               live)
                 echo "Rollback live."
+                exit 0
                 ;;
-              build_failed|update_failed|canceled|pre_deploy_failed)
-                echo "Rollback failed: $STATUS"
+              created|queued|build_in_progress|update_in_progress|pre_deploy_in_progress)
+                echo "Deploy in progress..."
+                ;;
+              *)
+                echo "Rollback failed: ${STATUS}"
                 exit 1
                 ;;
             esac
@@ -80,16 +87,28 @@ jobs:
             sleep 10
           done
 
-          for _ in {1..30}; do
-            if ! curl --fail --silent --show-error \
-              "$SERVICE_URL/health"; then
-              echo "Waiting for service health..."
-              sleep 5
-            else
-              echo "Rollback completed successfully."
-              exit 0
+          echo "Rollback timed out."
+          exit 1
+
+      - name: Health check
+        env:
+          SERVICE_URL: ${{ inputs.service_url }}
+        run: |
+          set -o pipefail
+
+          for _ in {1..10}; do
+            if curl --fail --silent --show-error \
+                --connect-timeout 5 \
+                --max-time 10 \
+                "$SERVICE_URL/health" | jq -e '.status == "ok"' > /dev/null; then
+
+                echo "Health check OK"
+                exit 0
             fi
+
+            echo "Waiting for service health..."
+            sleep 5
           done
 
-          echo "Rollback timed out."
+          echo "Health check FAILED"
           exit 1
