@@ -86,10 +86,42 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --locked
+        run: uv sync --locked --dev
 
       - name: Run Pytest
-        run: uv run pytest
+        run: uv run pytest \
+          --cov \
+          --cov-branch \
+          --junit-xml=test-report.xml \
+          --cov-report=term-missing \
+          --cov-report=xml:coverage.xml \
+          --cov-report=html:htmlcov
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: test-results-${{ matrix.python-version }}
+          path: test-report.xml
+          if-no-files-found: ignore
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            htmlcov/
+          if-no-files-found: ignore
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.13' && success()
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # 7.1.1
+        with:
+          files: coverage.xml
+          flags: python
+          fail_ci_if_error: false
 
   zizmor:
     name: Security Check (zizmor)
