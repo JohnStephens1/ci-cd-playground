@@ -127,8 +127,8 @@ jobs:
         id: previous_deploy_id
         shell: bash
         env:
+          RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
           set -euo pipefail
 
@@ -153,8 +153,8 @@ jobs:
         id: deploy
         shell: bash
         env:
+          RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
           IMAGE_NAME: ghcr.io/${{ github.repository }}
           IMAGE_DIGEST: ${{ inputs.image_digest }}
         run: |
@@ -186,8 +186,8 @@ jobs:
         id: deploying
         shell: bash
         env:
+          RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
           DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
         run: |
           set -euo pipefail
