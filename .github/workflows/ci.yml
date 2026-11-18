@@ -90,7 +90,7 @@ jobs:
 
       - name: Run Pytest
         run: uv run pytest \
-          --cov \
+          --cov=ci_cd_playground \
           --cov-branch \
           --junit-xml=test-report.xml \
           --cov-report=term-missing \
