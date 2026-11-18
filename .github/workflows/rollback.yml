@@ -18,7 +18,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: rollback-${{ inputs.service_url }}
+  group: rollback-${{ github.repository }}-${{ inputs.service_url }}
   cancel-in-progress: false
 
 jobs:
