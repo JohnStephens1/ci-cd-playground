@@ -1,0 +1,80 @@
+name: Rollback
+
+on:
+  workflow_call:
+    inputs:
+      service_id:
+        type: string
+        required: true
+      deploy_id:
+        type: string
+        required: true
+    secrets:
+      RENDER_API_KEY:
+        required: true
+
+permissions: {}
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Roll back production
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ inputs.service_id }}
+          TARGET_ID: ${{ inputs.deploy_id }}
+        run: |
+          set -euo pipefail
+
+          API="https://api.render.com/v1"
+
+          request() {
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $RENDER_API_KEY" \
+              -H "Content-Type: application/json" \
+              "$@"
+          }
+
+          echo "Rolling back to $TARGET_ID"
+
+          RESPONSE=$(request -X POST \
+            "$API/services/$SERVICE_ID/rollback" \
+            -d "{\"deployId\":\"$TARGET_ID\"}")
+
+          ROLLBACK_ID=$(echo "$RESPONSE" | jq -r '.id')
+
+          if [ -z "$ROLLBACK_ID" ] || [ "$ROLLBACK_ID" = "null" ]; then
+            echo "Could not obtain rollback deployment ID."
+            exit 1
+          fi
+
+          echo "Rollback deployment: $ROLLBACK_ID"
+
+          for _ in $(seq 1 60); do
+            DEPLOY=$(request \
+              "$API/services/$SERVICE_ID/deploys/$ROLLBACK_ID")
+
+            STATUS=$(echo "$DEPLOY" | jq -r '.status')
+
+            echo "Rollback status: $STATUS"
+
+            case "$STATUS" in
+              live)
+                echo "Rollback completed successfully."
+                exit 0
+                ;;
+              build_failed|update_failed|canceled|pre_deploy_failed)
+                echo "Rollback failed: $STATUS"
+                exit 1
+                ;;
+            esac
+
+            sleep 10
+          done
+
+          echo "Rollback timed out."
+          exit 1
+
+# TODO add smoketest
