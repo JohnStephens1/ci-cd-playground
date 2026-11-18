@@ -3,34 +3,48 @@ name: Rollback
 on:
   workflow_call:
     inputs:
-      service_url:
-        type: string
-        required: true
       deploy_id:
         type: string
         required: true
-    secrets:
-      RENDER_API_KEY:
+      environment:
+        description: Target deployment environment (staging or production)
         required: true
-      RENDER_SERVICE_ID:
-        required: true
+        type: string
 
 permissions: {}
-
-concurrency:
-  group: rollback-${{ github.repository }}-${{ inputs.service_url }}
-  cancel-in-progress: false
 
 jobs:
   rollback:
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+
+    concurrency:
+      group: rollback-${{ github.repository }}-${{ vars.RENDER_SERVICE_URL }}
+      cancel-in-progress: false
 
     steps:
-      - name: Roll back production
+      - name: Validate deployment inputs
+        shell: bash
         env:
-          SERVICE_URL: ${{ inputs.service_url }}
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+
+          case "$TARGET_ENV" in
+            staging|production)
+              ;;
+            *)
+              echo "::error::Invalid deployment environment: $TARGET_ENV"
+              exit 1
+              ;;
+          esac
+
+      - name: Roll back ${{ inputs.environment }}
+        env:
           DEPLOY_ID: ${{ inputs.deploy_id }}
-          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          SERVICE_URL: ${{ env.RENDER_SERVICE_URL }}
+          SERVICE_ID: ${{ env.RENDER_SERVICE_ID }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
           set -euo pipefail
@@ -92,7 +106,7 @@ jobs:
 
       - name: Health check
         env:
-          SERVICE_URL: ${{ inputs.service_url }}
+          SERVICE_URL: ${{ env.RENDER_SERVICE_URL }}
         run: |
           set -o pipefail
 

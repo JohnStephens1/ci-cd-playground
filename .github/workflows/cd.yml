@@ -49,12 +49,8 @@ jobs:
     uses: $/.github/workflows/deploy.yml
     with:
       environment: staging
-      service_url: https://ci-cd-playground-staging.onrender.com
       image_digest: ${{ needs.docker-publish.outputs.image_digest }}
       expected_commit: ${{ github.sha }}
-    secrets:
-      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-      RENDER_SERVICE_ID: ${{ secrets.RENDER_STAGING_SERVICE_ID }}
 
   deploy-production:
     name: Deploy to Production
@@ -71,9 +67,5 @@ jobs:
     uses: $/.github/workflows/deploy.yml
     with:
       environment: production
-      service_url: https://ci-cd-playground-production.onrender.com
       image_digest: ${{ needs.docker-publish.outputs.image_digest }}
       expected_commit: ${{ github.sha }}
-    secrets:
-      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-      RENDER_SERVICE_ID: ${{ secrets.RENDER_PRODUCTION_SERVICE_ID }}
