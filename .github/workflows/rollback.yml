@@ -10,6 +10,9 @@ on:
         description: Target deployment environment (staging or production)
         required: true
         type: string
+    secrets:
+      RENDER_API_KEY:
+        required: true
 
 permissions: {}
 

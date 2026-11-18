@@ -21,6 +21,9 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      RENDER_API_KEY:
+        required: true
   workflow_dispatch:
     inputs:
       environment:
@@ -131,6 +134,16 @@ jobs:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
           set -euo pipefail
+
+          if [[ -z "${RENDER_API_KEY}" ]]; then
+            echo "::error::RENDER_API_KEY is empty or unavailable"
+            exit 1
+          fi
+
+          if [[ -z "${RENDER_SERVICE_ID}" ]]; then
+            echo "::error::RENDER_SERVICE_ID is empty or unavailable"
+            exit 1
+          fi
 
           RESPONSE=$(curl --fail-with-body --silent --show-error \
             --max-time 20 \
@@ -321,3 +334,5 @@ jobs:
     with:
       deploy_id: ${{ needs.deploy.outputs.previous_deploy_id }}
       environment: ${{ inputs.environment }}
+    secrets:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
