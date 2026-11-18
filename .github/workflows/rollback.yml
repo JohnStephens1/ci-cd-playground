@@ -3,7 +3,7 @@ name: Rollback
 on:
   workflow_call:
     inputs:
-      service_id:
+      service_url:
         type: string
         required: true
       deploy_id:
@@ -12,8 +12,14 @@ on:
     secrets:
       RENDER_API_KEY:
         required: true
+      SERVICE_ID:
+        required: true
 
 permissions: {}
+
+concurrency:
+  group: rollback
+  cancel-in-progress: false
 
 jobs:
   rollback:
@@ -22,9 +28,10 @@ jobs:
     steps:
       - name: Roll back production
         env:
+          SERVICE_URL: ${{ inputs.service_url }}
+          DEPLOY_ID: ${{ inputs.deploy_id }}
+          SERVICE_ID: ${{ secrets.service_id }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          SERVICE_ID: ${{ inputs.service_id }}
-          TARGET_ID: ${{ inputs.deploy_id }}
         run: |
           set -euo pipefail
 
@@ -37,11 +44,11 @@ jobs:
               "$@"
           }
 
-          echo "Rolling back to $TARGET_ID"
+          echo "Rolling back to $DEPLOY_ID"
 
           RESPONSE=$(request -X POST \
             "$API/services/$SERVICE_ID/rollback" \
-            -d "{\"deployId\":\"$TARGET_ID\"}")
+            -d "{\"deployId\":\"$DEPLOY_ID\"}")
 
           ROLLBACK_ID=$(echo "$RESPONSE" | jq -r '.id')
 
@@ -62,8 +69,7 @@ jobs:
 
             case "$STATUS" in
               live)
-                echo "Rollback completed successfully."
-                exit 0
+                echo "Rollback live."
                 ;;
               build_failed|update_failed|canceled|pre_deploy_failed)
                 echo "Rollback failed: $STATUS"
@@ -74,7 +80,16 @@ jobs:
             sleep 10
           done
 
+          for _ in {1..30}; do
+            if ! curl --fail --silent --show-error \
+              "$SERVICE_URL/health"; then
+              echo "Waiting for service health..."
+              sleep 5
+            else
+              echo "Rollback completed successfully."
+              exit 0
+            fi
+          done
+
           echo "Rollback timed out."
           exit 1
-
-# TODO add smoketest
