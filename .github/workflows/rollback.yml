@@ -12,7 +12,7 @@ on:
     secrets:
       RENDER_API_KEY:
         required: true
-      SERVICE_ID:
+      RENDER_SERVICE_ID:
         required: true
 
 permissions: {}
@@ -30,7 +30,7 @@ jobs:
         env:
           SERVICE_URL: ${{ inputs.service_url }}
           DEPLOY_ID: ${{ inputs.deploy_id }}
-          SERVICE_ID: ${{ secrets.SERVICE_ID }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
           set -euo pipefail
