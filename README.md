@@ -35,6 +35,20 @@ The repository provides an inspectable, functional implementation of these pract
 
 ---
 
+## Table of Contents
+
+1. [System Architecture & Delivery Lifecycle](#system-architecture--delivery-lifecycle) — ([_details_](docs/architecture.md))
+2. [Software Supply Chain Security](#software-supply-chain-security)
+3. [GitHub Actions Workflows & Pipeline Architecture](#github-actions-workflows--pipeline-architecture) — ([_details_](docs/workflows.md))
+4. [Consumer & Evaluator Verification Guide](#consumer--evaluator-verification-guide) — ([_details_](docs/verification.md))
+5. [Demonstration Application & Endpoints](#demonstration-application--endpoints)
+6. [Local Development & Quality Engineering](#local-development--quality-engineering) — ([_details_](docs/local_development.md))
+7. [Repository Structure](#repository-structure)
+8. [Design Principles & Engineering Decisions](#design-principles--engineering-decisions)
+9. [License](#license)
+
+---
+
 ## System Architecture & Delivery Lifecycle
 
 The software delivery lifecycle spans three distinct execution phases, each governed by cryptographic verification, automated testing, and quality gates:
