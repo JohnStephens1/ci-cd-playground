@@ -364,7 +364,7 @@ jobs:
 
           # 1. Install our exact TestPyPI release, without dependencies
           installed=0
-          for attempt in {1..20}; do
+          for attempt in {1..30}; do
             if uv pip install \
               --python "$PYTHON" \
               --index-url https://test.pypi.org/simple/ \
@@ -374,7 +374,7 @@ jobs:
               break
             fi
             echo "Waiting for TestPyPI index propagation (attempt $attempt/20)..."
-            sleep 6
+            sleep 10
           done
 
           if [[ "$installed" -ne 1 ]]; then
@@ -455,7 +455,7 @@ jobs:
     name: Create GitHub Release
     permissions:
       contents: write
-    needs: [validate-release-reference, build, test-distributions, verify, publish-pypi]
+    needs: [validate-release-reference, build, test-distributions, verify]
     runs-on: ubuntu-latest
 
     steps:
