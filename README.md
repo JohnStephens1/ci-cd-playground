@@ -1,272 +1,369 @@
-# ci-cd-playground
+# CI/CD Playground
 
-A Python project configured with [`uv`](https://docs.astral.sh/uv/), [`ruff`](https://docs.astral.sh/ruff/), [`pyright`](https://microsoft.github.io/pyright/), and [`pytest`](https://docs.pytest.org/), complete with GitHub Actions Continuous Integration (CI), Release automation, and automated publishing to TestPyPI.
+[![CI](https://github.com/JohnStephens1/ci-cd-playground/actions/workflows/ci.yml/badge.svg)](https://github.com/JohnStephens1/ci-cd-playground/actions/workflows/ci.yml)
+[![CD](https://github.com/JohnStephens1/ci-cd-playground/actions/workflows/cd.yml/badge.svg)](https://github.com/JohnStephens1/ci-cd-playground/actions/workflows/cd.yml)
+[![Release](https://github.com/JohnStephens1/ci-cd-playground/actions/workflows/release.yml/badge.svg)](https://github.com/JohnStephens1/ci-cd-playground/actions/workflows/release.yml)
+[![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue)](https://www.python.org/)
+[![SLSA](https://img.shields.io/badge/SLSA-Level%203-darkgreen)](https://slsa.dev/)
+[![SBOM](https://img.shields.io/badge/SBOM-SPDX%202.3-teal)](https://spdx.dev/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-## Prerequisites
+**End-to-End CI/CD Engineering Showcase & Practical Reference Implementation**
 
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) (v0.5+ recommended)
+---
 
-## Quick Start
+## Overview
 
-### 1. Install Dependencies
+**CI/CD Playground is a practical, end-to-end reference implementation of modern CI/CD engineering practices**, built around GitHub Actions and a deliberately minimal Python application. The project focuses on the engineering infrastructure required to automate, secure, and maintain the complete software delivery lifecycle.
 
-Install all dependencies (including development tools) into a local virtual environment:
+It demonstrates how interconnected workflows, quality gates, and security controls can coordinate the following capabilities:
 
-```bash
-uv sync
+- **Continuous Integration:** Automated testing, coverage reporting, linting, formatting, static type checking, vulnerability scanning, and dependency management.
+- **Continuous Deployment:** Automated staging and production deployments on Render, with deployment verification, post-deployment smoke testing, and automatic rollback on failure.
+- **Release Automation:** Versioned distribution of Python packages to TestPyPI and PyPI, Docker images to GitHub Container Registry, and source releases through GitHub Releases.
+- **Supply-Chain Security:** OIDC-based authentication, PyPI trusted publishing, SBOM generation, SLSA provenance, cryptographic signing, and GitHub artifact attestations with automated verification.
+- **Operational Reliability:** Automated health checks, deployment validation, controlled production promotion, and recovery mechanisms.
+
+The repository provides an inspectable, functional implementation of these practices, illustrating how individual components integrate into a cohesive delivery architecture. Its workflows and configurations serve as both a practical learning resource and an adaptable foundation for building secure, reliable, and automated CI/CD pipelines.
+
+### Deployments
+
+- **Staging:** [ci-cd-playground-staging](<https://ci-cd-playground-staging.onrender.com/>)
+- **Production:** [ci-cd-playground-production](<https://ci-cd-playground-production.onrender.com/>)
+
+**Note:** The services might take a second to wake up if they haven't been accessed recently.
+
+---
+
+## Table of Contents
+
+1. [System Architecture & Delivery Lifecycle](#system-architecture--delivery-lifecycle) — ([_details_](docs/architecture.md))
+2. [Software Supply Chain Security](#software-supply-chain-security)
+3. [GitHub Actions Workflows & Pipeline Architecture](#github-actions-workflows--pipeline-architecture) — ([_details_](docs/workflows.md))
+4. [Consumer & Evaluator Verification Guide](#consumer--evaluator-verification-guide) — ([_details_](docs/verification.md))
+5. [Demonstration Application & Endpoints](#demonstration-application--endpoints)
+6. [Local Development & Quality Engineering](#local-development--quality-engineering) — ([_details_](docs/local_development.md))
+7. [Repository Structure](#repository-structure)
+8. [Design Principles & Engineering Decisions](#design-principles--engineering-decisions)
+9. [License](#license)
+
+---
+
+## System Architecture & Delivery Lifecycle
+
+The software delivery lifecycle spans three distinct execution phases, each governed by cryptographic verification, automated testing, and quality gates:
+
+See [workflow architecture](docs/architecture.md) for details.
+
+```mermaid
+---
+config:
+  layout: elk
+  elk:
+    nodePlacementAlignment: BALANCED
+---
+flowchart LR
+  subgraph release["<b>Release</b> (release.yml)"]
+    direction TB
+
+    A["Validate Release References"]
+    B["Build Distributions"]
+    BB["Generate<br/>SLSA Provenance & SBOM Attestations"]
+    C["Test Built Distributions"]
+    D["Verify Artifacts,<br/>Provenance & SBOM Attestations"]
+
+    E["Publish to TestPyPI"]
+    F["Create GitHub Release"]
+    G["Publish to PyPI"]
+  end
+
+  subgraph ci["<b>CI</b> (ci.yml)"]
+    direction TB
+
+    build["Build"]
+    TB["Test Build"]
+    LF["Lint & Format<br/>Ruff"]
+    TC["Type Checking<br/>Pyright"]
+    SC["Security Checks<br/>Zizmor, Bandit, Trivy"]
+    TM["Test Matrix"]
+    TR["Test & Coverage Report"]
+  end
+
+  A --> B --> BB --> C --> D
+
+  E -->|Success| G
+
+  D --> E
+  D --> F
+
+  style G fill:#238636,color:#fff,stroke:#238636
+  style F fill:#8957e5,color:#fff,stroke:#8957e5
+
+  build --> TB
+  TB ~~~ LF
+  LF ~~~ TC
+  TC ~~~ SC
+  SC ~~~ TM
+  TM --> TR
+
+  ci ~~~ release
 ```
 
-### 2. Run Quality Checks & Tests Locally
+```mermaid
+---
+config:
+  layout: elk
+  elk:
+    nodePlacementAlignment: BALANCED
+---
+flowchart TB
+  subgraph cd["<b>Continuous Deployment</b> (cd.yml)"]
+    direction LR
 
-| Tool | Purpose | Command |
-| :--- | :--- | :--- |
-| **Ruff Check** | Linting and code style rules | `uv run ruff check .` |
-| **Ruff Format** | Code formatting verification | `uv run ruff format --check .` |
-| **Pyright** | Static type checking | `uv run pyright` |
-| **Pytest** | Unit test suite | `uv run pytest` |
-| **Build** | Build sdist and wheel | `uv build` |
+    subgraph ci["Continuous Integration"]
+      cii["CI"]
+    end
 
-To automatically fix lint violations or format code:
+    subgraph build["Build & Publish"]
+      direction TB
 
-```bash
-# Format code
-uv run ruff format .
+      build_val["Build & Validate Image"]
+      gen_pov["Generate SLSA Provenance & SBOM Attestations"]
+      publish["Publish Image & Attestations to GHCR"]
 
-# Auto-fix linting issues
-uv run ruff check --fix .
+      build_val --> gen_pov
+      gen_pov --> publish
+    end
+
+    subgraph deploy_staging["Deploy Staging"]
+      direction TB
+
+      pull_s["Pull image from GHCR"]
+      verify_s["Verify Provenance & SBOM Attestations"]
+      deploy_s["Deploy to Render"]
+      monitor_s["Monitor"]
+      rollback_s["Rollback"]
+
+      pull_s --> verify_s --> deploy_s --> monitor_s -->|failure| rollback_s
+    end
+
+    subgraph deploy_production["Deploy Production"]
+      direction TB
+
+      pull_p["Pull image from GHCR"]
+      verify_p["Verify Provenance & SBOM Attestations"]
+      deploy_p["Deploy to Render"]
+      monitor_p["Monitor"]
+      rollback_p["Rollback"]
+
+      pull_p --> verify_p --> deploy_p --> monitor_p -->|failure| rollback_p
+    end
+
+    build --> deploy_staging
+    ci --> deploy_staging
+    deploy_staging -->|success| deploy_production
+  end
 ```
 
-### 3. Run the FastAPI Application
+---
 
-Start the local development server with auto-reload:
+## Software Supply Chain Security
 
-```bash
-uv run uvicorn ci_cd_playground:app --reload
+The GitHub Actions CI/CD pipelines implement defense-in-depth software supply-chain security mechanisms:
+
+```mermaid
+flowchart LR
+    subgraph BuildEngine["Isolated Trusted Builder"]
+        Source["Git Commit (Immutable SHA)"] --> BuildPkg["Single Build Run (uv build)"]
+        BuildPkg --> Digests["Compute SHA-256 Checksums"]
+        BuildPkg --> SyftScan["Generate SPDX 2.3 SBOMs (Syft)"]
+    end
+
+    subgraph KeylessSigning["Cryptographic Attestation (OIDC & Sigstore)"]
+        Digests --> SLSAAttest["actions/attest<br/>SLSA Build Level 3 Provenance"]
+        SyftScan --> SBOMAttest["actions/attest<br/>SPDX SBOM Attestations"]
+    end
+
+    subgraph VerificationGate["Verification Policies (Online & Offline)"]
+        SLSAAttest --> PolicyVerify["gh attestation verify<br/>- Source Repo Check<br/>- Signer Workflow Check<br/>- Source Git Ref Check"]
+        SBOMAttest --> PolicyVerify
+    end
+
+    subgraph Distribution["Secure Release & Deployment"]
+        PolicyVerify --> GHCR["GHCR (OCI Images + Attestations)"]
+        PolicyVerify --> PyPIPub["PyPI (PEP 740 Digital Attestations)"]
+        PolicyVerify --> Releases["GitHub Releases (Bundled Assets)"]
+    end
 ```
 
-The API endpoints will be accessible at `http://127.0.0.1:8000/` and interactive Swagger docs at `http://127.0.0.1:8000/docs`.
+- **SLSA Provenance Generation**: Build provenance attestations are generated for Docker container images and Python distribution artifacts (both `.whl` and `.tar.gz`), meeting **SLSA v1.0 Build Level 3** requirements through build isolation and single-job execution.
+- **SBOM Generation**: Full Software Bill of Materials (SBOM) documents in SPDX 2.3 format are generated independently for container images and both Python packages using Anchore Syft, outputting both machine-readable JSON and human-readable summary tables.
+- **GitHub Artifact Attestations**: GitHub's native artifact attestation mechanism (`actions/attest`) is leveraged to bind signed SLSA provenance and SBOM attestations to exact cryptographic digests.
+- **Cryptographic Signing**: Attestations are cryptographically signed using GitHub's keyless signing infrastructure, backed by short-lived OpenID Connect (OIDC) identity tokens and Sigstore public transparency logs.
+- **Signature & Attestation Verification**: Built-in verification steps use the GitHub CLI (`gh attestation verify`) to cryptographically validate artifact attestations both online against Sigstore and offline using bundled `.intoto.jsonl` and `.attestation.json` files.
+- **Provenance Identity & Source Verification**: Strict verification policies enforce constraints against the expected source repository (`JohnStephens1/ci-cd-playground`), the exact trusted signer workflow (`package-build.yml` or `docker-publish.yml`), and the source Git reference (`refs/heads/main` or target release tag).
+- **Published Artifact Verification**: Container image attestations are verified against immutable OCI image digests (`sha256:...`) before cloud deployment. Python distribution attestations are verified independently for both wheel and sdist packages prior to PyPI publication.
+- **Credential-less Authentication**: All package publishing to TestPyPI and PyPI utilizes OIDC Trusted Publishing, eliminating long-lived secrets, static API tokens, and passwords from the CI/CD environment.
+- **Automated Workflow & SAST Auditing**: GitHub Actions workflows are continuously audited for misconfigurations, permission leaks, and injection vulnerabilities using `zizmor`, while application source code undergoes Static Application Security Testing via `bandit`.
 
-### 4. Build Distribution Packages
+---
 
-Build both the source distribution (`.tar.gz`) and wheel (`.whl`):
+## GitHub Actions Workflows & Pipeline Architecture
 
-```bash
-uv build
-```
+The repository's automation is organized into modular, reusable, and decoupled workflows with minimal permissions (`permissions: {}` by default):
 
-The output packages will be located in the `dist/` directory.
+See [workflows](docs/workflows.md) for details.
 
-## GitHub Actions Workflows
+### 1. Continuous Integration — [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 
-The repository organizes continuous integration and deployment into modular, decoupled workflows:
+Runs on pull requests to `main` and provides comprehensive quality and security validation through linting (`ruff`), static type checking (`pyright`), and multi-version testing (`pytest`) across Python 3.10–3.13. It additionally performs workflow and application security audits (`zizmor`, `bandit`), package build and installation verification, and container security validation.
 
-### 1. Continuous Integration (CI) — [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+### 2. Container Security & Image Validation — [`.github/actions/validate-image`](.github/actions/validate-image/action.yaml)
 
-Runs automatically on pushes and pull requests to `main`, and functions as a **reusable workflow** (`workflow_call`):
+Provides a hardened validation process for container images before publication or deployment. It combines input validation, Trivy vulnerability scanning, sandboxed runtime execution, application health verification, and automated container cleanup to enforce security and operational requirements.
 
-1. **Lint & Format (Ruff)**: Verifies formatting and runs linting rules.
-2. **Type Check (Pyright)**: Validates static typing rules across `src/` and `tests/`.
-3. **Matrix Tests (Pytest)**: Runs the test suite across supported Python versions (`3.10`, `3.11`, `3.12`, `3.13`) using `astral-sh/setup-uv`.
-4. **Security Check (zizmor)**: Audits GitHub Actions workflows for security vulnerabilities and permissions issues.
-5. **Build (uv build)**: Builds source distributions and wheels, performs a smoke test by installing and importing the wheel in an isolated environment, and uploads build artifacts (`dist-packages`).
+### 3. Docker Build, Publish & Attestation — [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml)
 
-### 2. Container Security — [`.github/workflows/container-security.yml`](.github/workflows/container-security.yml)
-
-Runs on pull requests to `main` and via `workflow_call`:
-- Builds the runtime Docker image.
-- Scans for vulnerabilities with Trivy using repository ignore configurations.
-
-### 3. Docker Build & Publish — [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml)
-
-A **reusable workflow** (`workflow_call`) that encapsulates container lifecycle tasks:
-1. Builds the production image with `APP_VERSION` and `GIT_SHA` build arguments.
-2. Scans the container with Trivy for CRITICAL and HIGH severity issues.
-3. Starts the container locally and verifies `/health` response.
-4. Logs into GitHub Container Registry (GHCR) and publishes the tagged images (`${GITHUB_SHA}` and optional custom/release tag).
+Builds production container images using Docker Buildx, validates them before registry authentication, and publishes immutable image digests to GitHub Container Registry (GHCR). It also generates and publishes signed **SLSA provenance** and **SPDX SBOM attestations** to establish verifiable build integrity and software supply chain transparency.
 
 ### 4. Deploy Service — [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
 
-A **reusable deployment workflow** (`workflow_call`) that unifies Render deployment logic for all environments:
-1. Configures the target GitHub `environment` (e.g. `staging` or `production`), enabling environment protection rules, approvals, and secret isolation.
-2. Triggers Render deploy via REST API for the given service ID and image tag.
-3. Polls Render deployment status every 30s until `live` or failed.
-4. Verifies service availability via `/health` and validates that `/version` is running the expected commit SHA.
+Provides a reusable deployment engine for staging and production environments on Render, deploying exclusively through immutable container digests. It verifies image provenance and SBOM attestations before deployment, monitors deployment status, validates application health and commit identity, and automatically triggers rollback when post-deployment verification fails.
 
-### 5. Continuous Delivery (CD) — [`.github/workflows/cd.yml`](.github/workflows/cd.yml)
+### 5. Operational Recovery & Automated Rollback — [`.github/workflows/rollback.yml`](.github/workflows/rollback.yml)
 
-Triggers automatically on pushes to `main` and via manual `workflow_dispatch`:
-1. **CI Validation & Build**: Calls `ci.yml` to verify quality gates.
-2. **Docker Publish**: Calls `docker-publish.yml` to build, scan, test, and push the image to GHCR.
-3. **Deploy to Staging**: Automatically calls `deploy.yml` with `staging` settings and validates staging health.
-4. **Deploy to Production**: Calls `deploy.yml` with `production` settings. Can be gated with GitHub Environment manual approval rules or targeted selectively via manual dispatch.
+Provides automated recovery by restoring a previously recorded live Render deployment through its REST API. It monitors the rollback process and performs post-rollback health checks to verify that service availability has been recovered.
 
-### 6. Package Build & Provenance (SLSA Level 3) — [`.github/workflows/package-build.yml`](.github/workflows/package-build.yml)
+### 6. Continuous Delivery — [`.github/workflows/cd.yml`](.github/workflows/cd.yml)
 
-A **trusted reusable builder workflow** (`workflow_call`) that enforces isolation and build platform integrity to meet **SLSA v1.0 Build Level 3**:
-1. **Isolated Build**: Checks out the target commit and builds both distributions (`uv build --no-sources`) strictly once.
-2. **Artifact Identification**: Computes cryptographic SHA-256 digests for both the wheel (`.whl`) and sdist (`.tar.gz`), generating `checksums/SHA256SUMS`.
-3. **Individual SBOM Generation (Syft)**: Scans the actual built distributions independently with Syft to generate:
-   - Machine-readable SPDX 2.3 JSON: `package-wheel.spdx.json` and `package-sdist.spdx.json`
-   - Human-readable summary tables: `package-wheel.txt` and `package-sdist.txt`
-4. **SLSA Build Provenance Attestation**: Generates cryptographically signed SLSA provenance via `actions/attest` backed by Sigstore, bound to both distribution digests and exported to `attestations/package-provenance.intoto.jsonl`.
-5. **Individual SBOM Attestations**: Cryptographically signs each distribution's SBOM with `actions/attest`, binding the wheel SBOM to the wheel digest and the sdist SBOM to the sdist digest (`package-wheel-sbom.attestation.json` and `package-sdist-sbom.attestation.json`).
-6. **Immutable Artifact Preservation**: Uploads distributions, SBOMs, attestations, and checksums as GitHub Actions artifacts for downstream pipeline consumption.
+Orchestrates the end-to-end delivery pipeline on pushes to `main` or through manual execution with selectable deployment targets (`both`, `staging`, `production`). It sequentially enforces CI validation, secure container publication, staging deployment, and successful staging verification before promoting the **identical immutable image digest** to production.
 
-### 7. Release & PyPI/TestPyPI Publishing — [`.github/workflows/release.yml`](.github/workflows/release.yml)
+### 7. Trusted Package Builder (SLSA Level 3) — [`.github/workflows/package-build.yml`](.github/workflows/package-build.yml)
 
-Triggers whenever a version tag matching `v*` (e.g. `v0.1.0`) is pushed to the repository (or via manual `workflow_dispatch`):
+Builds Python wheel and source distribution artifacts exactly once in an isolated, trusted build environment. It generates SHA-256 checksums, individual SPDX SBOMs, and signed **SLSA Level 3 provenance and SBOM attestations**, preserving all artifacts as pipeline outputs for independent verification.
 
-1. **Validate Release Reference**: Validates git tag syntax, verifies that the tag cryptographically resolves to the target commit SHA, and ensures the git tag matches `project.version` in `pyproject.toml`.
-2. **Build via Trusted Builder**: Invokes the isolated reusable workflow `package-build.yml` to produce immutable distributions, Syft SBOMs, SLSA Level 3 provenance, and SBOM attestations.
-3. **Test Built Distributions**: Installs the built wheel in an isolated `.venv-wheel` and the built sdist in an isolated `.venv-sdist`, verifying installations and import smoke-tests before promotion.
-4. **Comprehensive Automated Verification**:
-   - Verifies distribution checksums against `SHA256SUMS`.
-   - Verifies SLSA Build Provenance authenticity and subject digests online via GitHub API and offline using the bundled `.intoto.jsonl` file.
-   - Verifies individual SBOM attestations online and offline using `--predicate-type https://spdx.dev/Document/v2.3`.
-   - Validates that the builder signer workflow strictly matches `package-build.yml` (`--signer-workflow`).
-5. **Publish to TestPyPI**:
-   - Publishes verified distributions using Trusted Publishing (OIDC) via `uv publish --index testpypi`.
-   - Performs a smoke-test installation in a clean environment from TestPyPI.
-6. **Publish to PyPI**:
-   - Gated by the `pypi` environment (with optional environment protection / manual approval rules).
-   - Generates PEP 740 digital provenance attestations via `astral-sh/attest-action`.
-   - Publishes verified distributions to PyPI via `uv publish`.
-7. **Create GitHub Release**:
-   - Creates a GitHub Release with release notes and attaches:
-     - `dist/`: Wheel (`.whl`) and source distribution (`.tar.gz`)
-     - `sbom/`: SPDX JSON and readable text SBOMs (`package-wheel.spdx.json`, `package-sdist.spdx.json`, `package-wheel.txt`, `package-sdist.txt`)
-     - `attestations/`: `package-provenance.intoto.jsonl`, `package-wheel-sbom.attestation.json`, `package-sdist-sbom.attestation.json`
-     - `checksums/`: `SHA256SUMS`
+### 8. Release & Multi-Channel Distribution — [`.github/workflows/release.yml`](.github/workflows/release.yml)
 
-#### Configuring PyPI & TestPyPI Trusted Publishing
+Automates verified Python package releases from semantic version tags or manual execution, enforcing consistency between Git tags and project metadata. It validates artifact integrity, provenance, SBOMs, and clean-room installations before publishing to **TestPyPI and PyPI** through trusted publishing, then creates a GitHub Release containing distributions and associated verification artifacts.
 
-1. **TestPyPI**:
-   - Add a Pending Publisher on [TestPyPI](https://test.pypi.org/manage/account/publishing/) targeting your GitHub repository and workflow (`release.yml`), with environment name `testpypi`.
-   - Create a GitHub Environment named `testpypi` in repository settings (**Settings > Environments**).
-2. **Production PyPI**:
-   - Add a Publisher on [PyPI](https://pypi.org/manage/account/publishing/) targeting your GitHub repository and workflow (`release.yml`), with environment name `pypi`.
-   - Create a GitHub Environment named `pypi` in repository settings (**Settings > Environments**), optionally configuring required reviewers for manual release sign-off.
+### 9. Dependency Maintenance — [`.github/dependabot.yml`](.github/dependabot.yml)
 
-## Consumer Verification Guide
+Automates weekly dependency updates and vulnerability mitigation across Python packages (`uv`), GitHub Actions, and Docker base images. It groups minor and patch updates, applies cooldown policies, and tracks GitHub Actions pinned to immutable commit SHAs.
 
-Consumers can independently verify the authenticity, integrity, SLSA Build Level 3 provenance, and SBOM attestations of released artifacts without trusting the build workflow's claims.
+---
 
-### 1. Verify SHA-256 Checksums
+## Consumer & Evaluator Verification Guide
 
-Download the release assets into a local directory and verify the distribution digests:
+Downstream consumers, security evaluators, and auditors can independently verify the authenticity, integrity, SLSA Build Level 3 provenance, and SBOM attestations of released artifacts without placing blind trust in build claims.
+
+See [verification](docs/verification.md) for details.
+
+### Verify Published Container Images (GHCR)
+
+Verify container image provenance and SBOM attestations against immutable image digests:
 
 ```bash
-sha256sum -c SHA256SUMS
-```
-
-### 2. Verify SLSA Build Level 3 Provenance
-
-Using the official [GitHub CLI](https://cli.github.com/) (`gh` v2.97.0+):
-
-**Online Verification (via Sigstore transparency log):**
-
-```bash
-# Verify wheel provenance
-gh attestation verify ci_cd_playground-0.1.16-py3-none-any.whl \
+# Verify container SLSA provenance
+gh attestation verify \
+  "oci://ghcr.io/johnstephens1/ci-cd-playground@<IMAGE_DIGEST>" \
   --repo JohnStephens1/ci-cd-playground \
-  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml
+  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/docker-publish.yml \
+  --source-ref "refs/heads/main"
 
-# Verify sdist provenance
-gh attestation verify ci_cd_playground-0.1.16.tar.gz \
+# Verify container SBOM attestation
+gh attestation verify \
+  "oci://ghcr.io/johnstephens1/ci-cd-playground@<IMAGE_DIGEST>" \
   --repo JohnStephens1/ci-cd-playground \
-  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml
-```
-
-**Offline Verification (using the release attestation bundle):**
-
-```bash
-gh attestation verify ci_cd_playground-0.1.16-py3-none-any.whl \
-  --bundle package-provenance.intoto.jsonl \
-  --repo JohnStephens1/ci-cd-playground \
-  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml
-
-gh attestation verify ci_cd_playground-0.1.16.tar.gz \
-  --bundle package-provenance.intoto.jsonl \
-  --repo JohnStephens1/ci-cd-playground \
-  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml
-```
-
-### 3. Verify Individual SBOM Attestations
-
-Verify that the SBOMs were cryptographically signed and bound to the exact distribution files:
-
-**Wheel SBOM Attestation:**
-
-```bash
-# Online
-gh attestation verify ci_cd_playground-0.1.16-py3-none-any.whl \
-  --repo JohnStephens1/ci-cd-playground \
-  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml \
-  --predicate-type https://spdx.dev/Document/v2.3
-
-# Offline
-gh attestation verify ci_cd_playground-0.1.16-py3-none-any.whl \
-  --bundle package-wheel-sbom.attestation.json \
-  --repo JohnStephens1/ci-cd-playground \
-  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml \
+  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/docker-publish.yml \
+  --source-ref "refs/heads/main" \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
-**Sdist SBOM Attestation:**
+---
 
-```bash
-# Online
-gh attestation verify ci_cd_playground-0.1.16.tar.gz \
-  --repo JohnStephens1/ci-cd-playground \
-  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml \
-  --predicate-type https://spdx.dev/Document/v2.3
+## Demonstration Application & Endpoints
 
-# Offline
-gh attestation verify ci_cd_playground-0.1.16.tar.gz \
-  --bundle package-sdist-sbom.attestation.json \
-  --repo JohnStephens1/ci-cd-playground \
-  --signer-workflow JohnStephens1/ci-cd-playground/.github/workflows/package-build.yml \
-  --predicate-type https://spdx.dev/Document/v2.3
-```
+The demonstration vehicle is deliberately lean, providing a lightweight, responsive surface for automated testing, container sandboxing, and deployment verification:
 
-### 4. Inspect Software Bill of Materials (SBOM)
+- **Backend**: Python 3.10+ application built with FastAPI and Uvicorn.
+- **Frontend**: Static canvas served with p5.js generative animations via FastAPI `StaticFiles`.
+- **Container**: Multi-stage build based on `python:3.13-slim`, running with an unprivileged non-root user (`app:10001:10001`) and read-only root filesystem support.
 
-Inspect the Syft-generated human-readable summary or machine-readable SPDX JSON:
+| Endpoint | Method | Response / Description |
+| :--- | :--- | :--- |
+| `/` | `GET` | Static interactive p5.js animation frontend (`index.html`) |
+| `/health` | `GET` | Health verification endpoint returning `{"status": "ok"}` |
+| `/version` | `GET` | Deployment metadata returning `{"version": "...", "commit": "..."}` |
+| `/hello/{name}` | `GET` | Parametric greeting endpoint returning `{"message": "Hello, {name}!"}` |
+| `/docs` | `GET` | Interactive Swagger / OpenAPI documentation UI |
 
-```bash
-# Human-readable table summary
-cat package-wheel.txt
-cat package-sdist.txt
+---
 
-# Query packages in SPDX JSON with jq
-jq '.packages[] | {name: .name, versionInfo: .versionInfo}' package-wheel.spdx.json
-```
+## Local Development & Quality Engineering
 
-## Project Structure
+See [local development](docs/local_development.md) for details.
+
+### Local Quality & Security Commands
+
+All checks and tools run through `uv`:
+
+| Category | Tool | Command | Description |
+| :--- | :--- | :--- | :--- |
+| **Linting** | Ruff | `uv run ruff check .` | Executes linting rules and imports ordering |
+| **Linting (Fix)** | Ruff | `uv run ruff check --fix .` | Automatically fixes auto-fixable lint issues |
+| **Formatting** | Ruff | `uv run ruff format --check .` | Verifies code conforms to formatting standards |
+| **Formatting (Fix)** | Ruff | `uv run ruff format .` | Formats all source files |
+| **Type Checking** | Pyright | `uv run pyright` | Runs static type analysis in standard mode |
+| **Testing** | Pytest | `uv run pytest` | Runs unit tests with test summaries |
+| **Coverage** | Pytest-Cov | `uv run pytest --cov=ci_cd_playground --cov-branch --cov-report=term-missing` | Runs tests with branch coverage metrics |
+| **SAST Scan** | Bandit | `uv run bandit -c pyproject.toml -r src` | Scans Python code for security vulnerabilities |
+| **Workflow Audit**| Zizmor | `uv run zizmor --format=github .` | Audits GitHub Actions workflows for security hazards |
+| **Pre-commit** | pre-commit | `uv run pre-commit run --all-files` | Runs local git hooks (ruff, yamllint, actionlint) |
+| **Packaging** | uv build | `uv build` | Builds sdist and wheel packages into `dist/` |
+
+---
+
+## Repository Structure
 
 ```text
 ci-cd-playground/
 ├── .github/
-│   └── workflows/
-│       ├── cd.yml                  # Continuous delivery pipeline (main -> staging -> production)
-│       ├── ci.yml                  # Reusable CI workflow (lint, typecheck, test, build)
-│       ├── container-security.yml  # Container build & Trivy scan on PRs
-│       ├── deploy.yml              # Reusable Render deployment workflow
-│       ├── docker-publish.yml      # Reusable Docker build, test & GHCR publish
-│       ├── package-build.yml       # Reusable SLSA Level 3 builder (uv build, Syft SBOMs, attestations)
-│       └── release.yml             # Release pipeline (validation, build, test, verify, TestPyPI, PyPI, GitHub)
-├── src/
-│   └── ci_cd_playground/
-│       ├── __init__.py             # Package entrypoint and sample code
-│       ├── app.py                  # Minimal FastAPI application
-│       └── py.typed                # PEP 561 typing marker
-├── tests/
-│   ├── __init__.py
-│   ├── test_app.py                 # FastAPI endpoint and factory tests
-│   └── test_ci_test.py             # Base unit tests
-├── .gitignore
-├── .python-version                 # Default local Python version
-├── pyproject.toml                  # Project configuration, dependencies, and tool settings
-├── uv.lock                         # Deterministic dependency lockfile
-└── README.md
+│   ├── actions/
+│   │   └── validate-image/         # Composite action for container Trivy scan & smoke test
+│   │       └── action.yaml
+│   ├── workflows/
+│   │   ├── cd.yml                  # Continuous delivery pipeline (main -> staging -> production)
+│   │   ├── ci.yml                  # Reusable CI workflow (lint, typecheck, matrix test, SAST, build)
+│   │   ├── deploy.yml              # Reusable Render deployment workflow with attestation verify
+│   │   ├── docker-publish.yml      # Reusable Docker build, test, publish & attestation to GHCR
+│   │   ├── package-build.yml       # Reusable SLSA Level 3 builder (uv build, Syft SBOMs, attestations)
+│   │   ├── release.yml             # Release pipeline (validation, test, verify, TestPyPI, PyPI, GitHub)
+│   │   └── rollback.yml            # Automated operational recovery & rollback workflow
+│   ├── actionlint.yaml             # Actionlint workflow linter configuration
+│   └── dependabot.yml              # Automated dependency maintenance schedule (uv, actions, docker)
+|
+├── ...                             # Other project configuration and tooling
+|
+├── src/ci_cd_playground/           # FastAPI application
+├── static/                         # Frontend
+├── tests/                          # Tests
+├── Dockerfile                      # Hardened multi-stage non-root container definition
+└── pyproject.toml                  # Project metadata, dependencies, and tool configurations
 ```
+
+---
+
+## Design Principles & Engineering Decisions
+
+1. **Infrastructure as the Primary Product**: The application codebase is kept deliberately minimal. The value of this repository lies in its CI/CD workflows, supply-chain attestations, automated rollbacks, and release architecture.
+2. **Build Once, Attest Once, Deploy Everywhere**: Artifacts (both Python distributions and container images) are built strictly once during their respective pipelines. Downstream stages consume identical, immutable artifacts verified by cryptographic digests rather than rebuilding from source.
+3. **Least-Privilege Security Architecture**: Workflows define `permissions: {}` at top-level scope, explicitly granting minimal necessary permissions (such as `contents: read`, `id-token: write`, or `attestations: write`) strictly to individual jobs.
+4. **Keyless Provenance & OIDC Authentication**: No long-lived PyPI tokens or static credentials are stored in repository secrets for package distribution. All publishing operations authenticate via short-lived OIDC exchange backed by Sigstore transparency logs.
+5. **Zero-Trust Deployment Gates**: The deployment workflow validates both SLSA provenance and SBOM attestations of OCI container images *before* initiating any cloud deployment, ensuring that only verified artifacts reach staging and production.
+6. **Automated Operational Recovery**: Deployments are coupled with active smoke tests verifying both system health (`/health`) and deployed commit identity (`/version`). If an anomalous deployment reaches live status, the automated rollback workflow immediately restores the previous known-good deployment without manual intervention.
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
