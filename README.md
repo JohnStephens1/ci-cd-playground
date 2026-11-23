@@ -323,32 +323,14 @@ ci-cd-playground/
 │   │   └── rollback.yml            # Automated operational recovery & rollback workflow
 │   ├── actionlint.yaml             # Actionlint workflow linter configuration
 │   └── dependabot.yml              # Automated dependency maintenance schedule (uv, actions, docker)
-├── src/
-│   └── ci_cd_playground/
-│       ├── __init__.py             # Package exports (hello, add, app, create_app)
-│       ├── app.py                  # Minimal FastAPI application & endpoint definitions
-│       └── py.typed                # PEP 561 typing marker
-├── static/
-│   ├── index.html                  # Frontend HTML container for p5.js canvas
-│   ├── sketch.js                   # Interactive p5.js generative animation
-│   └── style.css                   # Static styling rules
-├── tests/
-│   ├── __init__.py
-│   ├── test_app.py                 # FastAPI endpoint & factory tests
-│   └── test_ci_test.py             # Base unit tests
-├── .dockerignore                   # Docker build context exclusions
-├── .gitattributes                  # Git line-ending and attribute configurations
-├── .gitignore                      # Git ignore patterns
-├── .pre-commit-config.yaml         # Pre-commit hook definitions (ruff, yamllint, actionlint)
-├── .python-version                 # Local Python version indicator
-├── .trivyignore                    # Trivy vulnerability baseline exception rules
-├── .yamllint.yaml                  # YAML formatting rules
+|
+├── ...                             # Other project configuration and tooling
+|
+├── src/ci_cd_playground/           # FastAPI application
+├── static/                         # Frontend
+├── tests/                          # Tests
 ├── Dockerfile                      # Hardened multi-stage non-root container definition
-├── LICENSE                         # MIT License
-├── pyproject.toml                  # Project metadata, dependencies, and tool configurations
-├── trivy.yml                       # Trivy container security scanning configuration
-├── uv.lock                         # Deterministic dependency lockfile
-└── README.md                       # Project documentation and engineering reference
+└── pyproject.toml                  # Project metadata, dependencies, and tool configurations
 ```
 
 ---
