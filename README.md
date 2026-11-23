@@ -26,6 +26,13 @@ It demonstrates how interconnected workflows, quality gates, and security contro
 
 The repository provides an inspectable, functional implementation of these practices, illustrating how individual components integrate into a cohesive delivery architecture. Its workflows and configurations serve as both a practical learning resource and an adaptable foundation for building secure, reliable, and automated CI/CD pipelines.
 
+### Deployments
+
+- **Staging:** [ci-cd-playground-staging](<https://ci-cd-playground-staging.onrender.com/>)
+- **Production:** [ci-cd-playground-production](<https://ci-cd-playground-production.onrender.com/>)
+
+**Note:** The services might take a second to wake up if they haven't been accessed recently.
+
 ---
 
 ## System Architecture & Delivery Lifecycle
