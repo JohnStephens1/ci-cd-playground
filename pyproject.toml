@@ -1,7 +1,7 @@
 [project]
 name = "ci-cd-playground"
 version = "1.0.0"
-description = "A sample Python project with uv, ruff, pyright, and pytest"
+description = "End-to-End CI/CD Engineering Showcase & Practical Reference Implementation"
 readme = "README.md"
 authors = [
     { name = "john", email = "96323078+JohnStephens1@users.noreply.github.com" }
