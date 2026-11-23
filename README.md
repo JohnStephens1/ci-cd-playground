@@ -110,35 +110,39 @@ flowchart TB
       cii["CI"]
     end
 
-    subgraph build["Build"]
+    subgraph build["Build & Publish"]
       direction TB
 
       build_val["Build & Validate Image"]
       gen_pov["Generate SLSA Provenance & SBOM Attestations"]
+      publish["Publish Image & Attestations to GHCR"]
 
       build_val --> gen_pov
+      gen_pov --> publish
     end
 
     subgraph deploy_staging["Deploy Staging"]
       direction TB
 
+      pull_s["Pull image from GHCR"]
       verify_s["Verify Provenance & SBOM Attestations"]
       deploy_s["Deploy to Render"]
       monitor_s["Monitor"]
       rollback_s["Rollback"]
 
-      verify_s --> deploy_s --> monitor_s -->|failure| rollback_s
+      pull_s --> verify_s --> deploy_s --> monitor_s -->|failure| rollback_s
     end
 
     subgraph deploy_production["Deploy Production"]
       direction TB
 
+      pull_p["Pull image from GHCR"]
       verify_p["Verify Provenance & SBOM Attestations"]
       deploy_p["Deploy to Render"]
       monitor_p["Monitor"]
       rollback_p["Rollback"]
 
-      verify_p --> deploy_p --> monitor_p -->|failure| rollback_p
+      pull_p --> verify_p --> deploy_p --> monitor_p -->|failure| rollback_p
     end
 
     build --> deploy_staging
