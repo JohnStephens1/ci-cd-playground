@@ -32,7 +32,7 @@ The repository provides an inspectable, functional implementation of these pract
 
 The software delivery lifecycle spans three distinct execution phases, each governed by cryptographic verification, automated testing, and quality gates:
 
-See [workflow architecture](docs/workflows.md) for details.
+See [workflow architecture](docs/architecture.md) for details.
 
 ```mermaid
 ---
