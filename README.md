@@ -14,35 +14,125 @@
 
 ## Overview
 
-**CI/CD Playground is a comprehensive, end-to-end CI/CD engineering showcase and practical reference implementation, demonstrating the design and implementation of a fully automated software delivery lifecycle using GitHub Actions.**
+**CI/CD Playground is a practical, end-to-end reference implementation of modern CI/CD engineering practices**, built around GitHub Actions and a deliberately minimal Python application. The project focuses on the engineering infrastructure required to automate, secure, and maintain the complete software delivery lifecycle.
 
-Built around a deliberately minimal Python application, the project places its emphasis on the engineering infrastructure rather than application functionality. Its central objective is to demonstrate how a developer-centric workflow can be supported by automated processes covering code validation, quality assurance, security, deployment, release management, and operational recovery.
+It demonstrates how interconnected workflows, quality gates, and security controls can coordinate the following capabilities:
 
-The CI/CD architecture integrates automated testing and coverage reporting, linting and formatting, static type checking, vulnerability scanning, dependency management, and workflow security analysis. These processes are orchestrated through interconnected GitHub Actions workflows, with appropriate dependencies and quality gates governing subsequent stages.
+- **Continuous Integration:** Automated testing, coverage reporting, linting, formatting, static type checking, vulnerability scanning, and dependency management.
+- **Continuous Deployment:** Automated staging and production deployments on Render, with deployment verification, post-deployment smoke testing, and automatic rollback on failure.
+- **Release Automation:** Versioned distribution of Python packages to TestPyPI and PyPI, Docker images to GitHub Container Registry, and source releases through GitHub Releases.
+- **Supply-Chain Security:** OIDC-based authentication, PyPI trusted publishing, SBOM generation, SLSA provenance, cryptographic signing, and GitHub artifact attestations with automated verification.
+- **Operational Reliability:** Automated health checks, deployment validation, controlled production promotion, and recovery mechanisms.
 
-Continuous deployment is implemented through separate staging and production environments hosted on Render. Changes merged into the `main` branch automatically trigger CI validation followed by staging deployment. Successful deployment and health verification are prerequisites for automated production deployment. Post-deployment smoke tests validate application health, with automated rollback to the previous successful deployment in case of failure.
-
-The release pipeline automates the complete distribution lifecycle. Versioned releases trigger the building and publishing of Python packages to TestPyPI and PyPI, Docker images to GitHub Container Registry, and source releases to GitHub Releases. These artifacts originate from the same source revision and are integrated into an automated release process.
-
-A significant component of the project is software supply-chain security. It incorporates OIDC-based authentication, PyPI trusted publishing, SBOM generation, SLSA provenance, cryptographic signing, and GitHub artifact attestations. Published artifacts and their associated provenance and attestations undergo automated verification, including checks of provenance identity and source repository.
-
-The resulting implementation demonstrates an integrated approach to software delivery in which quality assurance, security controls, deployment orchestration, artifact distribution, supply-chain integrity, and operational recovery are automated and coordinated throughout the development lifecycle.
-
-The repository provides a functional, inspectable reference implementation of these practices. Its workflows and configurations are intended to demonstrate not only what is implemented, but also how individual components are integrated, why they exist, and what problems they address, providing a practical basis for understanding and adapting similar CI/CD architectures.
+The repository provides an inspectable, functional implementation of these practices, illustrating how individual components integrate into a cohesive delivery architecture. Its workflows and configurations serve as both a practical learning resource and an adaptable foundation for building secure, reliable, and automated CI/CD pipelines.
 
 ---
 
-## Project Identity & Attributes
+```mermaid
+---
+config:
+  layout: elk
+  elk:
+    nodePlacementAlignment: BALANCED
+---
+flowchart LR
+  subgraph release["<b>Release</b> (release.yml)"]
+    direction TB
 
-| Dimension | Details |
-| :--- | :--- |
-| **Project Status** | Completed showcase project and operational reference implementation |
-| **Category** | End-to-end CI/CD engineering showcase and practical reference implementation |
-| **Primary Purpose** | Demonstrate the design and implementation of a comprehensive, automated software delivery lifecycle using GitHub Actions |
-| **Core Philosophy** | Developers should be able to focus on writing code. The CI/CD infrastructure should take responsibility for validating, securing, deploying, distributing, and monitoring the resulting software. |
-| **Demonstration Vehicle** | A deliberately minimal Python application using FastAPI, a static JavaScript frontend (p5.js generative visual), and Docker |
-| **Primary Audience** | Recruiters, hiring managers, and technical evaluators assessing production-grade DevOps and DevSecOps engineering competencies |
-| **Secondary Audience** | Developers and platform engineers interested in practical CI/CD implementations, modular workflow architecture, and software supply-chain security |
+    A["Validate Release References"]
+    B["Build Distributions"]
+    BB["Generate<br/>SLSA Provenance & SBOM Attestations"]
+    C["Test Built Distributions"]
+    D["Verify Artifacts,<br/>Provenance & SBOM Attestations"]
+
+    E["Publish to TestPyPI"]
+    F["Create GitHub Release"]
+    G["Publish to PyPI"]
+  end
+
+  subgraph ci["<b>CI</b> (ci.yml)"]
+    direction TB
+
+    build["Build"]
+    TB["Test Build"]
+    LF["Lint & Format<br/>Ruff"]
+    TC["Type Checking<br/>Pyright"]
+    SC["Security Checks<br/>Zizmor, Bandit, Trivy"]
+    TM["Test Matrix"]
+    TR["Test & Coverage Report"]
+  end
+
+  A --> B --> BB --> C --> D
+
+  E -->|Success| G
+
+  D --> E
+  D --> F
+
+  style G fill:#238636,color:#fff,stroke:#238636
+  style F fill:#8957e5,color:#fff,stroke:#8957e5
+
+  build --> TB
+  TB ~~~ LF
+  LF ~~~ TC
+  TC ~~~ SC
+  SC ~~~ TM
+  TM --> TR
+
+  ci ~~~ release
+```
+
+```mermaid
+---
+config:
+  layout: elk
+  elk:
+    nodePlacementAlignment: BALANCED
+---
+flowchart TB
+  subgraph cd["<b>Continuous Deployment</b> (cd.yml)"]
+    direction LR
+
+    subgraph ci["Continuous Integration"]
+      cii["CI"]
+    end
+
+    subgraph build["Build"]
+      direction TB
+
+      build_val["Build & Validate Image"]
+      gen_pov["Generate SLSA Provenance & SBOM Attestations"]
+
+      build_val --> gen_pov
+    end
+
+    subgraph deploy_staging["Deploy Staging"]
+      direction TB
+
+      verify_s["Verify Provenance & SBOM Attestations"]
+      deploy_s["Deploy to Render"]
+      monitor_s["Monitor"]
+      rollback_s["Rollback"]
+
+      verify_s --> deploy_s --> monitor_s -->|failure| rollback_s
+    end
+
+    subgraph deploy_production["Deploy Production"]
+      direction TB
+
+      verify_p["Verify Provenance & SBOM Attestations"]
+      deploy_p["Deploy to Render"]
+      monitor_p["Monitor"]
+      rollback_p["Rollback"]
+
+      verify_p --> deploy_p --> monitor_p -->|failure| rollback_p
+    end
+
+    build --> deploy_staging
+    ci --> deploy_staging
+    deploy_staging -->|success| deploy_production
+  end
+```
 
 ---
 
@@ -53,7 +143,7 @@ The software delivery lifecycle spans three distinct execution phases, each gove
 ```mermaid
 flowchart TD
     subgraph CI["1. Continuous Integration (ci.yml)"]
-        direction TB
+        direction LR
         PR["Pull Request / Push"] --> Lint["Ruff Check & Format"]
         PR --> TypeCheck["Pyright Type Check"]
         PR --> MatrixTest["Matrix Test (Python 3.10 - 3.13)<br/>Branch Coverage & Reports"]
